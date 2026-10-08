@@ -1,0 +1,14 @@
+{
+  "name": "paradigia-outreach-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Premium email composer, CRM and sequence manager for An Evening on the Water (Paradigia x mobi hub events x Sunstrike). Sends from your own Gmail.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
