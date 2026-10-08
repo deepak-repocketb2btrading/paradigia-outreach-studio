@@ -397,6 +397,10 @@ function blockInspector(raw) {
       const team = D().team;
       const sel = b.members || team.map((m) => m.id);
       f = fld.text(b, 'heading', 'Heading') + fld.sw(b, 'showManagement', 'Show MANAGEMENT row') + fld.sw(b, 'showSales', 'Show SALES TEAM row') +
+        fld.sel(b, 'size', 'Photo size', [['small', 'Small (44px)'], ['medium', 'Medium (56px)']]) +
+        fld.sel(b, 'labels', 'Names and roles', [['hover', 'Show on hover'], ['show', 'Always show under photos']]) +
+        fld.sel(b, 'perRow', 'Max photos per row', [['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']]) +
+        `<div class="tiny faint">Rows are balanced, so 9 people with max 5 become 4 + 5. Phones have no hover, so first names show under the photos there.</div>` +
         `<div class="field"><span>People in this email</span>${team.map((m) => `<label class="check"><input type="checkbox" data-member="${m.id}" ${sel.includes(m.id) ? 'checked' : ''} ${m.show === false ? 'disabled' : ''}> ${esc(m.name)} <span class="tiny faint">${esc(m.group === 'sales' ? 'Sales' : 'Management')}${m.show === false ? ' · hidden in Team' : ''}${m.placeholder ? ' · placeholder' : ''}</span></label>`).join('')}</div>
         <a class="btn xs" href="#/team">${icon('team')} Manage team, photos and links</a>`;
       break;
@@ -620,12 +624,33 @@ export function sendTest(sq, step) {
   if (!accts.length) { fail('Connect a Gmail account first (Settings → Gmail).'); return; }
   const def = d.settings.testEmail || accts[0].email;
   const dm = step.deck && step.deck !== 'inherit' ? step.deck : sq.deckChoice || 'off';
+  const tl = d.settings.testLead || {};
   const m = modal({ title: 'Send test to myself', body: `<div class="form-grid"><label class="field span2"><span>Send to</span><input class="input" data-to value="${esc(def)}"></label>
     <label class="field"><span>From</span><select class="input" data-from>${accts.map((a) => `<option>${esc(a.email)}</option>`).join('')}</select></label>
     <label class="field"><span>Fill merge fields with</span><select class="input" data-lead><option value="">Sample lead (Sarah · Acme Ventures)</option>${d.leads.slice(0, 200).map((l) => `<option value="${l.id}">${esc(fullName(l))}</option>`).join('')}</select></label>
+    <label class="field"><span>Name (optional)</span><input class="input" data-tname value="${esc(tl.name || '')}" placeholder="e.g. Ahmed Khan"></label>
+    <label class="field"><span>Company (optional)</span><input class="input" data-tcompany value="${esc(tl.company || '')}" placeholder="e.g. Gulf Ventures"></label>
+    <div class="field span2"><span class="hint" data-tsubj></span></div>
     <div class="field span2"><span>Deck</span><div class="seg" data-deck>${[['attach', 'Attach PDF'], ['link', 'Link'], ['off', 'Off']].map(([k, l]) => `<button data-v="${k}" class="${dm === k ? 'on pink' : ''}">${l}</button>`).join('')}</div></div></div>
-    <div class="sp8"></div><div class="small muted">The subject starts with [Test]. Test sends don't change any lead's status.</div>`,
+    <div class="sp8"></div><div class="small muted">Name and company fill {{first_name}} and {{company}} in this test only. Leave them blank to use the lead picked above. The subject starts with [Test], and test sends don't change any lead's status.</div>`,
   foot: '<button class="btn ghost" data-no>Cancel</button><button class="btn primary" data-yes>Send test</button>' });
+  const testLead = () => {
+    const id = $('[data-lead]', m.el).value;
+    const base = { ...((id && leadById(id)) || Seed.sampleLead()) };
+    const name = $('[data-tname]', m.el).value.trim();
+    const company = $('[data-tcompany]', m.el).value.trim();
+    if (name) { const parts = name.split(/\s+/); base.firstName = parts.shift(); base.lastName = parts.join(' '); }
+    if (company) base.company = company;
+    return base;
+  };
+  const showSubject = () => {
+    const lead = testLead();
+    const subj = R.merge(step.subjects[step.subjectIndex || 0] || step.subjects[0] || '', R.mergeData(lead, previewCtx(lead)), 'text');
+    $('[data-tsubj]', m.el).textContent = `Subject: [Test] ${subj}`;
+  };
+  m.el.addEventListener('input', showSubject);
+  m.el.addEventListener('change', showSubject);
+  showSubject();
   let deck = dm;
   $('[data-deck]', m.el).onclick = (e) => { const x = e.target.closest('button'); if (!x) return; deck = x.dataset.v; $$('[data-deck] button', m.el).forEach((y) => y.className = y === x ? 'on pink' : ''); };
   $('[data-no]', m.el).onclick = () => m.close();
@@ -634,8 +659,10 @@ export function sendTest(sq, step) {
     e.currentTarget.textContent = 'Sending…';
     try {
       const to = $('[data-to]', m.el).value.trim();
-      const r = await api('POST', '/api/test-send', { sequenceId: sq.id, stepId: step.id, to, accountEmail: $('[data-from]', m.el).value, leadId: $('[data-lead]', m.el).value, deckMode: deck });
-      if (to !== d.settings.testEmail) api('PUT', '/api/settings', { testEmail: to }).catch(() => {});
+      const name = $('[data-tname]', m.el).value.trim();
+      const company = $('[data-tcompany]', m.el).value.trim();
+      const r = await api('POST', '/api/test-send', { sequenceId: sq.id, stepId: step.id, to, accountEmail: $('[data-from]', m.el).value, leadId: $('[data-lead]', m.el).value, deckMode: deck, testName: name, testCompany: company });
+      if (to !== d.settings.testEmail || name !== (tl.name || '') || company !== (tl.company || '')) api('PUT', '/api/settings', { testEmail: to, testLead: { name, company } }).catch(() => {});
       m.close();
       ok(`Test sent to ${r.to}. Check your inbox (and Promotions/Spam the first time).`);
     } catch (err) { fail(err); e.currentTarget.disabled = false; e.currentTarget.textContent = 'Send test'; }

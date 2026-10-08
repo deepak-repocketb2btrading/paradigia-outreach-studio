@@ -99,7 +99,7 @@ async function onClick(e) {
       const other = same[j];
       const a = team.indexOf(me), c = team.indexOf(other);
       [team[a], team[c]] = [team[c], team[a]];
-      await api('POST', '/api/team-order', { ids: team.map((x) => x.id) });
+      await api('POST', '/api/order/team', { ids: team.map((x) => x.id) });
       await loadState(); draw();
     } else if (b.dataset.nophoto) {
       await api('PUT', `/api/team/${b.dataset.nophoto}`, { photo: '' }); await loadState(); draw();

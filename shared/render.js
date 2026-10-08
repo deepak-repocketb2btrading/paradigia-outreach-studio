@@ -173,7 +173,7 @@
     image: { label: 'Image', icon: '▣', hint: 'Photo from the deck or your upload', defaults: { src: 'brand:yacht-1.jpg', alt: 'The yacht at night in Dubai Marina', link: '', caption: '', full: true } },
     divider: { label: 'Divider', icon: '〰', hint: 'Line, pink bar or wave art', defaults: { style: 'wave', bg: 'light' } },
     spacer: { label: 'Spacer', icon: '↕', hint: 'Vertical space', defaults: { height: 24, bg: 'light' } },
-    team: { label: 'Meet the Team', icon: '◎', hint: 'Management + sales circles', defaults: { heading: 'MEET THE TEAM AT THE EVENT', showManagement: true, showSales: true, members: null } },
+    team: { label: 'Meet the Team', icon: '◎', hint: 'Management + sales circles', defaults: { heading: 'MEET THE TEAM AT THE EVENT', showManagement: true, showSales: true, members: null, size: 'small', labels: 'hover', perRow: 5 } },
     signature: { label: 'Signature', icon: '✎', hint: 'Premium sender signature', defaults: {} },
     footer: { label: 'Footer', icon: '▁', hint: 'Event details + unsubscribe', defaults: { note: 'You’re receiving this because we believe An Evening on the Water is relevant to {{company}}.' } },
   };
@@ -205,6 +205,8 @@
       case 'tickets': return esc((s.event && s.event.ticketLink) || '#');
       case 'deck': return esc((s.deck && s.deck.hostedUrl) || `mailto:${snd.email}?subject=${encodeURIComponent('Please send the sponsorship deck')}`);
       case 'whatsapp': {
+        // No number on the signature: fall back to a pre-filled reply email.
+        if (!digits(snd.whatsapp)) return actionHref(r, { action: 'reply', replySubject: fallbackSubject || 'Let’s talk: An Evening on the Water' });
         const text = r.data ? merge(o.waText || '', r.data, 'text') : (o.waText || '');
         return esc(`https://wa.me/${digits(snd.whatsapp)}${text ? '?text=' + encodeURIComponent(text) : ''}`);
       }
@@ -249,10 +251,11 @@
     const ring = o.ring || 2;
     const inner = size;
     const initials = String(o.name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
-    const open = o.href ? `<a href="${o.href}" target="_blank" style="text-decoration:none;color:${C.white};display:block;">` : '';
+    const tip = o.title ? ` title="${esc(o.title)}"` : '';
+    const open = o.href ? `<a href="${o.href}" target="_blank"${tip} style="text-decoration:none;color:${C.white};display:block;">` : '';
     const close = o.href ? '</a>' : '';
     if (o.photo) {
-      return `${open}<img src="${esc(r.asset(o.photo))}" width="${inner}" height="${inner}" alt="${esc('Photo of ' + (o.name || 'team member'))}" style="display:block;margin:0 auto;width:${inner}px;height:${inner}px;border-radius:50%;border:${ring}px solid ${C.pink};object-fit:cover;outline:none;text-decoration:none;">${close}`;
+      return `${open}<img src="${esc(r.asset(o.photo))}" width="${inner}" height="${inner}" alt="${esc(o.title || 'Photo of ' + (o.name || 'team member'))}"${tip} style="display:block;margin:0 auto;width:${inner}px;height:${inner}px;border-radius:50%;border:${ring}px solid ${C.pink};object-fit:cover;outline:none;text-decoration:none;">${close}`;
     }
     return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;border-collapse:separate;"><tr><td width="${inner}" height="${inner}" align="center" valign="middle" bgcolor="${C.indigo}" style="width:${inner}px;height:${inner}px;border-radius:50%;border:${ring}px solid ${C.pink};background-color:${C.indigo};background-image:linear-gradient(135deg,${C.indigo},${C.violet});font-family:${FONT};font-size:${Math.round(size / 3.2)}px;line-height:${inner}px;font-weight:700;letter-spacing:1px;color:${C.white};text-align:center;">${open}${esc(initials)}${close}</td></tr></table>`;
   }
@@ -447,25 +450,49 @@
     return li || wa || (m.email ? `mailto:${m.email}` : '');
   }
 
+  /** Split into rows of at most `max`, keeping rows balanced (9 with max 5 -> 4 + 5). */
+  function balancedRows(list, max) {
+    const rows = Math.ceil(list.length / max);
+    const base = Math.floor(list.length / rows);
+    const extra = list.length % rows;
+    const out = [];
+    let i = 0;
+    for (let k = 0; k < rows; k++) { const n = base + (k >= rows - extra ? 1 : 0); out.push(list.slice(i, i + n)); i += n; }
+    return out;
+  }
+
   R.team = (b, r) => {
     const all = (r.ctx.team || []).filter((m) => m.show !== false && (!b.members || b.members.includes(m.id)));
+    const small = b.size !== 'medium';
+    const hover = b.labels === 'hover';
+    const px = small ? 44 : 56;
+    const cellW = small ? 84 : 124;
+    const perRow = Math.max(2, Math.min(6, Number(b.perRow) || (small ? 5 : 4)));
     const groups = [];
     if (b.showManagement !== false) groups.push(['MANAGEMENT', all.filter((m) => (m.group || 'management') === 'management')]);
     if (b.showSales !== false) groups.push(['SALES TEAM', all.filter((m) => m.group === 'sales')]);
-    const rows = groups.filter(([, list]) => list.length).map(([label, list]) => {
-      const chunks = [];
-      for (let i = 0; i < list.length; i += 4) chunks.push(list.slice(i, i + 4));
-      return `<p class="dm-muted" style="margin:24px 0 14px 0;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:4px;color:${C.grey};text-align:center;">${label}</p>` +
-        chunks.map((chunk) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>` +
-          chunk.map((m) => {
-            const href = memberHref(m);
-            return `<td class="team-cell" align="center" valign="top" width="124" style="width:124px;padding:0 4px 14px 4px;">` +
-              circle(r, { photo: m.photo, name: m.name, size: 56, href: href ? esc(href) : '' }) +
-              `<p class="dm-ink" style="margin:9px 0 1px 0;font-family:${FONT};font-size:13px;line-height:17px;font-weight:700;color:${C.ink};text-align:center;">${esc(m.name)}</p>` +
-              `<p style="margin:0;font-family:${FONT};font-size:10px;line-height:14px;letter-spacing:1px;text-transform:uppercase;color:${C.grey};text-align:center;">${esc(m.role || '')}</p>` +
-              `</td>`;
-          }).join('') + `</tr></table>`).join('');
-    }).join('');
+    const cell = (m) => {
+      const href = memberHref(m);
+      const via = /wa\.me|whatsapp/i.test(href) ? 'WhatsApp' : /linkedin/i.test(href) ? 'LinkedIn' : href.startsWith('mailto:') ? 'Email' : '';
+      const title = [m.name, m.role].filter(Boolean).join(' · ');
+      const pic = circle(r, { photo: m.photo, name: m.name, size: px, href: href ? esc(href) : '', title });
+      if (!hover) {
+        return `<td class="team-cell${small ? ' team-cell-s' : ''}" align="center" valign="top" width="${cellW}" style="width:${cellW}px;padding:0 4px 14px 4px;">` + pic +
+          `<p class="dm-ink" style="margin:8px 0 1px 0;font-family:${FONT};font-size:${small ? 11 : 13}px;line-height:${small ? 14 : 17}px;font-weight:700;color:${C.ink};text-align:center;">${esc(m.name)}</p>` +
+          `<p style="margin:0;font-family:${FONT};font-size:${small ? 8.5 : 10}px;line-height:${small ? 12 : 14}px;letter-spacing:1px;text-transform:uppercase;color:${C.grey};text-align:center;">${esc(m.role || '')}</p></td>`;
+      }
+      // Hover card, absolutely positioned where supported. Clients without hover keep the photo and its native tooltip.
+      return `<td class="team-cell tm${small ? ' team-cell-s' : ''}" align="center" valign="top" width="${cellW}" style="width:${cellW}px;padding:0 4px 12px 4px;position:relative;">` + pic +
+        `<div class="tt" style="display:none;position:absolute;left:-34px;right:-34px;top:${px + 10}px;z-index:20;background-color:#111118;border:1px solid ${C.pink};border-radius:6px;padding:8px 8px 9px 8px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);">` +
+        `<p class="tt-name" style="margin:0;font-family:${FONT};font-size:12px;line-height:16px;font-weight:700;color:${C.white};text-align:center;">${esc(m.name)}</p>` +
+        (m.role ? `<p class="tt-role" style="margin:2px 0 0 0;font-family:${FONT};font-size:9px;line-height:13px;letter-spacing:1px;text-transform:uppercase;color:#B9B7C8;text-align:center;">${esc(m.role)}</p>` : '') +
+        (via ? `<p class="tt-link" style="margin:5px 0 0 0;font-family:${FONT};font-size:9px;line-height:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${C.pink};text-align:center;">${via} &rarr;</p>` : '') +
+        `</div></td>`;
+    };
+    const rows = groups.filter(([, list]) => list.length).map(([label, list]) =>
+      `<p class="dm-muted" style="margin:${small ? 20 : 24}px 0 ${small ? 12 : 14}px 0;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:4px;color:${C.grey};text-align:center;">${label}</p>` +
+      balancedRows(list, perRow).map((row) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>${row.map(cell).join('')}</tr></table>`).join('')
+    ).join('');
     return sec(b, r, { bg: C.off, pad: '34px 30px 18px 30px', cls: 'px dm-off', align: 'center' },
       `<p${r.E('heading')} class="dm-ink" style="margin:0;font-family:${FONT};font-size:18px;line-height:24px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${C.ink};text-align:center;">${r.T(b.heading)}</p>` +
       `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:12px auto 0 auto;"><tr><td width="56" height="3" bgcolor="${C.pink}" style="width:56px;height:3px;background-color:${C.pink};font-size:0;line-height:0;">&nbsp;</td></tr></table>` +
@@ -531,7 +558,8 @@
     .dm-row{background-color:#1A1A22!important;}
     .dm-ink,.dm-ink p,.dm-ink li,.dm-ink strong,.dm-ink a{color:#ECEBE8!important;}
     .dm-muted{color:#A7A6B5!important;}
-    .dm-border{border-color:#ECEBE8!important;}`;
+    .dm-border{border-color:#ECEBE8!important;}
+    .tm .tt .tt-name{color:#ECEBE8!important;}`;
 
   function docShell(inner, o) {
     const pre = o.preheader ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:${C.night};">${esc(o.preheader)}${'&#8199;&#847; '.repeat(70)}</div>` : '';
@@ -555,6 +583,7 @@
   table,td{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}
   img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none;}
   a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;}
+  .tm:hover .tt{display:block!important;}
   u + #body a{color:inherit;text-decoration:none;}
   @media screen and (max-width:620px){
     .container{width:100%!important;max-width:100%!important;}
@@ -566,6 +595,10 @@
     .logo-m{width:84px!important;}
     .logo-s{width:48px!important;}
     .team-cell{width:110px!important;}
+    .team-cell-s{width:62px!important;padding-left:2px!important;padding-right:2px!important;}
+    .tm .tt{display:block!important;position:static!important;background-color:transparent!important;border:0!important;box-shadow:none!important;padding:5px 0 0 0!important;}
+    .tm .tt .tt-name{color:#1C1C1C!important;font-size:10px!important;line-height:13px!important;}
+    .tm .tt .tt-role,.tm .tt .tt-link{display:none!important;}
     .sig-photo{width:84px!important;}
     .cmp-label{font-size:9px!important;padding-left:6px!important;}
   }

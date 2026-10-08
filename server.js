@@ -274,11 +274,13 @@ route('DELETE', '/api/:col/:id', (req, res, { params }) => {
   send(res, 200, { ok: true });
 });
 
-route('POST', '/api/team-order', async (req, res) => {
+// Reorder team members or signatures (the first signature is the default).
+route('POST', '/api/order/:col', async (req, res, { params }) => {
+  if (!['team', 'signatures'].includes(params.col)) throw new HttpError(404, 'Unknown collection');
   const { ids = [] } = await readJson(req);
   const rank = new Map(ids.map((id, i) => [id, i]));
-  store.db.team.sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : 1e9) - (rank.has(b.id) ? rank.get(b.id) : 1e9));
-  engine.changed('team');
+  store.db[params.col].sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : 1e9) - (rank.has(b.id) ? rank.get(b.id) : 1e9));
+  engine.changed(params.col);
   send(res, 200, { ok: true });
 });
 

@@ -26,14 +26,14 @@ function draw() {
   const f = (k, label, ph, span) => `<label class="field ${span ? 'span2' : ''}"><span>${label}</span><input class="input" data-k="${k}" value="${esc((s && s[k]) || '')}" placeholder="${esc(ph || '')}"></label>`;
   wrap.innerHTML = `<div class="page-head"><div><div class="eyebrow">Sender identity</div><h1>Signatures</h1></div>
       <div class="actions"><button class="btn primary" data-new>${icon('plus')} New signature</button></div></div>
-    <div class="chips" style="margin-bottom:16px">${d.signatures.map((x) => `<button class="chip ${x.id === selId ? 'on' : ''}" data-pick="${x.id}">${esc(x.label || x.name)}</button>`).join('')}</div>
+    <div class="chips" style="margin-bottom:16px">${d.signatures.map((x, i) => `<button class="chip ${x.id === selId ? 'on' : ''}" data-pick="${x.id}">${esc(x.label || x.name)}${i === 0 ? ' <span class="n">default</span>' : ''}</button>`).join('')}</div>
     ${s ? `<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start">
       <div class="card">
-        <div class="row" style="gap:16px;margin-bottom:16px"><div class="photo-up" data-photo title="Upload photo">${avatar(s.name, s.photo, 'xl')}</div><div class="grow">${f('label', 'Signature name (internal)', 'Roxy Khan (default)')}</div></div>
+        <div class="row" style="gap:16px;margin-bottom:16px"><div class="photo-up" data-photo title="Upload photo">${avatar(s.name, s.photo, 'xl')}</div><div class="grow">${f('label', 'Signature name (internal)', 'Deepak')}</div></div>
         <div class="form-grid">
           ${f('name', 'Full name', 'Roxy Khan')}${f('title', 'Title', 'Head of Events')}
           ${f('phone', 'Phone', '+971 56 798 1463')}${f('whatsapp', 'WhatsApp number', '+971567981463')}
-          ${f('email', 'Email', 'roxy@mobi-hub.com')}${f('website', 'Website', 'https://www.mobi-hub.com')}
+          <label class="field"><span>Email</span><input class="input" data-k="email" value="${esc(s.email || '')}" placeholder="Blank = the Gmail you send from"></label>${f('website', 'Website', 'https://www.mobi-hub.com')}
           ${f('ticketLink', 'Event ticket link', 'https://www.tickettailor.com/…')}${f('ticketLabel', 'Ticket link text', 'Get your event ticket')}
           ${f('tagline', 'Tagline under the logos', '', true)}
           <label class="field span2"><span>Confidentiality note</span><textarea class="input" data-k="confidentiality" rows="3">${esc(s.confidentiality || '')}</textarea></label>
@@ -41,7 +41,7 @@ function draw() {
           <div class="field"><span>&nbsp;</span><label class="switch"><input type="checkbox" data-k="showDeckLink" ${s.showDeckLink !== false ? 'checked' : ''}><span class="tr"></span>“Download Sponsorship Deck” link</label></div>
         </div>
         <div class="sp16"></div>
-        <div class="row">${s.photo ? '<button class="btn xs ghost" data-nophoto>Use initials instead of photo</button>' : ''}<button class="btn sm danger right" data-del ${d.signatures.length < 2 ? 'disabled' : ''}>${icon('trash')} Delete signature</button></div>
+        <div class="row">${s.photo ? '<button class="btn xs ghost" data-nophoto>Use initials instead of photo</button>' : ''}<span class="right row" style="gap:6px">${d.signatures[0] && d.signatures[0].id === s.id ? '<span class="badge" style="background:#22C55E22;color:#22C55E">Default signature</span>' : `<button class="btn sm" data-default>${icon('star')} Make default</button>`}<button class="btn sm danger" data-del ${d.signatures.length < 2 ? 'disabled' : ''}>${icon('trash')} Delete signature</button></span></div>
       </div>
       <div style="position:sticky;top:20px"><div class="label" style="margin-bottom:10px">Live preview</div><iframe class="preview-frame" data-prev style="height:420px"></iframe>
         <div class="small muted" style="margin-top:10px">Photo 72px with a pink ring, contact lines with pink icons, the three logos and the deck link. The phone/WhatsApp here also powers “Meet me on the yacht, let’s talk”.</div></div>
@@ -91,6 +91,9 @@ async function onClick(e) {
       if (!file) return;
       const r = await upload(await squarePhoto(file, 400), 'photo');
       await api('PUT', `/api/signatures/${selId}`, { photo: r.ref }); await loadState(); draw(); ok('Photo updated');
+    } else if (b.matches('[data-default]')) {
+      await api('POST', '/api/order/signatures', { ids: [selId, ...D().signatures.filter((x) => x.id !== selId).map((x) => x.id)] });
+      await loadState(); draw(); ok('Default signature updated');
     } else if (b.matches('[data-nophoto]')) { await api('PUT', `/api/signatures/${selId}`, { photo: '' }); await loadState(); draw(); }
     else if (b.matches('[data-del]')) {
       if (await confirmBox('Delete this signature?', { okText: 'Delete', danger: true })) { await api('DELETE', `/api/signatures/${selId}`); selId = null; await loadState(); draw(); }

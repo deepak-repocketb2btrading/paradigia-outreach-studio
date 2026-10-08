@@ -67,6 +67,7 @@ function renderNav() {
 }
 
 async function route() {
+  if (!D()) return; // state not loaded yet (server starting or unreachable)
   const { name, params, query } = parseHash();
   const view = VIEWS[name] || dashboard;
   if (current && current !== view && current.leave) {

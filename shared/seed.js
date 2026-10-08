@@ -107,27 +107,31 @@
       m('tm-naz', 'Naz Pirzada', 'Co-Founder', 'management', 'brand:team-naz.jpg', { linkedin: 'https://www.linkedin.com/in/naz-pirzada/' }),
       m('tm-roxy', 'Roxy Khan', 'Head of Events', 'management', 'brand:team-roxy-khan.jpg', { email: 'roxy@mobi-hub.com', phone: '+971 56 798 1463', whatsapp: '+971567981463', linkTo: 'whatsapp' }),
       m('tm-james', 'James Thompson', 'Head of Marketing', 'management', CTA_IMG + '4-1-150x150.png', { linkedin: 'https://www.linkedin.com/in/joshua-james-thompson/' }),
+      // Sales: first row Yiannis, Dominic, Noura, Aniket; second row the other five.
+      m('tm-yiannis', 'Yiannis Sumner', 'Marketing Executive', 'sales', CTA_IMG + '8-1-150x150.png', { linkedin: 'https://www.linkedin.com/in/yianni-sumner-585388202/' }),
+      m('tm-dominic', 'Dominic', '', 'sales', 'brand:team-dominic.jpg'),
       m('tm-noura', 'Noura Fazaz', 'Business Development Manager', 'sales', 'brand:team-noura.jpg', { whatsapp: '+447454573632', linkTo: 'whatsapp' }),
       m('tm-aniket', 'Aniket Kumar', 'Sales Manager (Asia)', 'sales', CTA_IMG + '6-1-150x150.png', { linkedin: 'https://www.linkedin.com/in/aniket-kumar-315648166/' }),
-      m('tm-yiannis', 'Yiannis Sumner', 'Marketing Executive', 'sales', CTA_IMG + '8-1-150x150.png', { linkedin: 'https://www.linkedin.com/in/yianni-sumner-585388202/' }),
       m('tm-deepak', 'Deepak', '', 'sales', 'brand:team-deepak.jpg'),
       m('tm-sameer', 'Sameer', '', 'sales', 'brand:team-sameer.jpg'),
       m('tm-diana', 'Diana', '', 'sales', 'brand:team-diana.jpg'),
       m('tm-anastasia', 'Anastasia', '', 'sales', 'brand:team-anastasia.jpg'),
       m('tm-adile', 'Adile', '', 'sales', 'brand:team-adile.jpg'),
-      m('tm-dominic', 'Dominic', '', 'sales', 'brand:team-dominic.jpg'),
     ];
   }
 
+  // The first signature is the default. An empty email means "use the Gmail address you send from".
   function signatures() {
-    return [{
-      id: 'sig-roxy', label: 'Roxy Khan (default)', name: 'Roxy Khan', title: 'Head of Events',
-      photo: 'brand:team-roxy-khan.jpg', phone: '+971 56 798 1463', whatsapp: '+971567981463', email: 'roxy@mobi-hub.com',
+    const common = {
       website: 'https://www.mobi-hub.com', ticketLink: TICKET, ticketLabel: 'Get your event ticket',
       tagline: 'AN EVENING ON THE WATER — DUBAI MARINA YACHT NETWORKING PARTY', showDeckLink: true,
       confidentiality: 'This email and any attachments are confidential and intended solely for the addressee. If you have received it in error, please notify the sender and delete it.',
       accountEmail: '',
-    }];
+    };
+    return [
+      { ...common, id: 'sig-deepak', label: 'Deepak', name: 'Deepak', title: '', photo: 'brand:team-deepak.jpg', phone: '', whatsapp: '', email: '' },
+      { ...common, id: 'sig-roxy', label: 'Roxy Khan', name: 'Roxy Khan', title: 'Head of Events', photo: 'brand:team-roxy-khan.jpg', phone: '+971 56 798 1463', whatsapp: '+971567981463', email: 'roxy@mobi-hub.com' },
+    ];
   }
 
   const why = () => B('callout', { eyebrow: 'WHY PARTNER WITH US', text: 'Curated audience, direct introductions, multi-channel visibility, and a memorable setting people talk about long after the night ends.', items: [] });
