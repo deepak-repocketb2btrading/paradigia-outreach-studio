@@ -35,14 +35,13 @@ function isDue(lead) {
 }
 function matches(lead) {
   if (f.status && lead.status !== f.status) return false;
-  if (f.tier && R.tierKey(lead.tierInterest) !== f.tier) return false;
-  if (f.tier && !lead.tierInterest) return false;
+  if (f.tier && R.leadTier(lead.tierInterest) !== f.tier) return false;
   if (f.list && !(lead.tags || []).includes(f.list)) return false;
   if (f.reply === 'yes' && !lead.lastReplyAt) return false;
   if (f.reply === 'no' && lead.lastReplyAt) return false;
   if (f.reply === 'unread' && !lead.unread) return false;
   if (f.q) {
-    const hay = `${lead.firstName} ${lead.lastName} ${lead.email} ${lead.company} ${lead.title} ${(lead.tags || []).join(' ')}`.toLowerCase();
+    const hay = `${lead.firstName} ${lead.lastName} ${lead.email} ${lead.company} ${lead.title} ${lead.interests || ''} ${(lead.tags || []).join(' ')}`.toLowerCase();
     if (!f.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w))) return false;
   }
   if (f.progress) {
@@ -240,10 +239,10 @@ async function bulk(action, btn) {
 
 function exportCsv(list) {
   const d = D();
-  const rows = [['First Name', 'Last Name', 'Email', 'Company', 'Title', 'Phone', 'LinkedIn', 'Tier Interest', 'Status', 'Lists', 'Last Contacted', 'Last Reply', 'Sequences', 'Notes']];
+  const rows = [['First Name', 'Last Name', 'Email', 'Company', 'Title', 'Phone', 'LinkedIn', 'Tier Interest', 'Interests', 'Status', 'Lists', 'Last Contacted', 'Last Reply', 'Sequences', 'Notes']];
   for (const l of list) {
     const seqs = d.enrollments.filter((e) => e.leadId === l.id).map((e) => { const s = seqById(e.sequenceId); return s ? `${s.name} ${e.nextStepIndex || 0}/${s.steps.length}` : ''; }).join('; ');
-    rows.push([l.firstName, l.lastName, l.email, l.company, l.title, l.phone, l.linkedin, l.tierInterest, R.STATUSES.find((s) => s.key === l.status)?.label || l.status, (l.tags || []).join('; '), l.lastContactedAt || '', l.lastReplyAt || '', seqs, (l.notes || []).map((n) => n.text).join(' | ')]);
+    rows.push([l.firstName, l.lastName, l.email, l.company, l.title, l.phone, l.linkedin, l.tierInterest, l.interests || '', R.STATUSES.find((s) => s.key === l.status)?.label || l.status, (l.tags || []).join('; '), l.lastContactedAt || '', l.lastReplyAt || '', seqs, (l.notes || []).map((n) => n.text).join(' | ')]);
   }
   download(`paradigia-leads-${new Date().toISOString().slice(0, 10)}.csv`, '﻿' + toCSV(rows), 'text/csv');
 }
@@ -272,7 +271,7 @@ function openAdd() {
 /* ---------------------------------------------------------------- import */
 const FIELDS = [
   ['', '— ignore —'], ['firstName', 'First name'], ['lastName', 'Last name'], ['fullName', 'Full name (split)'], ['email', 'Email'],
-  ['company', 'Company'], ['title', 'Job title'], ['phone', 'Phone / WhatsApp'], ['linkedin', 'LinkedIn URL'], ['tierInterest', 'Tier interest'], ['status', 'Pipeline status'], ['notes', 'Notes'], ['tags', 'List / tag'],
+  ['company', 'Company'], ['title', 'Job title'], ['phone', 'Phone / WhatsApp'], ['linkedin', 'LinkedIn URL'], ['tierInterest', 'Sponsorship tier interest'], ['interests', 'Interests / products'], ['status', 'Pipeline status'], ['notes', 'Notes'], ['tags', 'List / tag'],
 ];
 function guess(header) {
   const h = header.toLowerCase().replace(/[^a-z]/g, '');
@@ -284,7 +283,8 @@ function guess(header) {
   if (/(title|position|role|designation|jobtitle)/.test(h)) return 'title';
   if (/(phone|mobile|whatsapp|tel|cell)/.test(h)) return 'phone';
   if (h.includes('linkedin')) return 'linkedin';
-  if (/(tier|package|interest|sponsorship)/.test(h)) return 'tierInterest';
+  if (/(tier|package|sponsor)/.test(h)) return 'tierInterest';
+  if (/(interest|product|category|sector|industry)/.test(h)) return 'interests';
   if (/(status|stage|pipeline)/.test(h)) return 'status';
   if (/(note|comment|remark)/.test(h)) return 'notes';
   if (/(list|tag|segment|group)/.test(h)) return 'tags';
@@ -335,7 +335,12 @@ function openImport() {
       const v = String(r[i] == null ? '' : r[i]).trim();
       if (k === 'fullName') { const parts = v.split(/\s+/); o.firstName = o.firstName || parts.shift() || ''; o.lastName = o.lastName || parts.join(' '); }
       else if (k === 'tags') o.tags = v.split(/[;,|]/).map((t) => t.trim()).filter(Boolean);
-      else if (k === 'tierInterest') { const t = v.toLowerCase(); o.tierInterest = ['bronze', 'silver', 'gold', 'premium'].find((x) => t.includes(x)) ? ['Bronze', 'Silver', 'Gold', 'Premium'].find((x) => t.includes(x.toLowerCase())) : v; }
+      else if (k === 'tierInterest') {
+        // Only Bronze / Silver / Gold / Premium count as a tier; anything else is kept as an interest.
+        const t = R.leadTier(v);
+        if (t) o.tierInterest = t[0].toUpperCase() + t.slice(1);
+        else if (v) o.interests = [o.interests, v].filter(Boolean).join('; ');
+      } else if (k === 'interests') o.interests = [o.interests, v].filter(Boolean).join('; ');
       else o[k] = v;
     });
     return o;

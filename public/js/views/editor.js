@@ -1,6 +1,8 @@
 /* WYSIWYG email editor: click-to-edit canvas, block library, layers, inspector. */
 import { D, R, Seed, $, $$, esc, icon, api, modal, ok, fail, loadState, seqById, leadById, clone, uid, previewCtx, fillFrame, sanitizeRich, copyText, copyRich, download, confirmBox, prompt1, upload, fitImage, connectedAccounts, stepStats, fullName, assetUrl } from '../core.js';
 import { shortMenu } from '../components/lead.js';
+import { saveAsTemplate } from '../components/templates.js';
+import { downloadMenu } from '../components/approval.js';
 
 const BRAND_IMAGES = ['brand:hero-yacht.jpg', 'brand:yacht-1.jpg', 'brand:yacht-2.jpg', 'brand:yacht-3.jpg', 'brand:yacht-4.jpg', 'brand:yacht-5.jpg', 'brand:yacht-6.jpg', 'brand:yacht-7.jpg'];
 
@@ -26,16 +28,25 @@ let autosaveT;
 let renderT;
 
 export function render(container, params) {
-  const seq = seqById(params[0]);
-  const step = seq && seq.steps.find((s) => s.id === params[1]);
-  if (!step) { container.innerHTML = `<div class="page"><div class="notice err">${icon('alert')}<div>Email not found. <a href="#/sequences">Back to sequences</a></div></div></div>`; return; }
-  Object.assign(st, { seqId: seq.id, W: clone(step), sel: null, mode: 'edit', device: 'desktop', dark: false, leadId: '', left: 'blocks', right: 'email', dirty: false, saving: false, savedAt: null, hist: [], fut: [], sigId: '' });
+  let seqIdNew = null;
+  let tplId = null;
+  let step = null;
+  if (params[0] === 'template') {
+    const tpl = (D().templates || []).find((t) => t.id === params[1]);
+    if (tpl) { tplId = tpl.id; step = { ...clone(tpl.step), id: tpl.id, name: tpl.name }; }
+  } else {
+    const sq = seqById(params[0]);
+    step = sq && sq.steps.find((s) => s.id === params[1]);
+    if (step) { seqIdNew = sq.id; step = clone(step); }
+  }
+  if (!step) { container.innerHTML = `<div class="page"><div class="notice err">${icon('alert')}<div>Email not found. <a href="#/sequences">Back to sequences</a> · <a href="#/templates">Templates</a></div></div></div>`; return; }
+  Object.assign(st, { seqId: seqIdNew, tplId, W: step, base: JSON.stringify(step), sel: null, mode: 'edit', device: 'desktop', dark: false, leadId: '', left: 'blocks', right: 'email', dirty: false, saving: false, savedAt: null, hist: [], fut: [], sigId: '' });
   container.innerHTML = '';
   root = document.createElement('div');
   root.className = 'editor';
   root.dataset.view = 'editor';
   container.appendChild(root);
-  root.innerHTML = `<div class="ed-top" data-top></div><div class="ed-left" data-left></div><div class="ed-canvas" data-canvas><iframe title="Email canvas"></iframe></div><div class="ed-right" data-right></div>`;
+  root.innerHTML = `<div class="ed-top" data-top></div><div class="ed-left" data-left></div><div class="ed-canvas" data-canvas><iframe title="Email canvas"></iframe></div><div class="ed-html" data-html></div><div class="ed-right" data-right></div>`;
   frame = $('iframe', root);
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
@@ -44,6 +55,8 @@ export function render(container, params) {
   document.addEventListener('keydown', onKey);
   wireLayerDrag();
   drawTop(); drawLeft(); drawRight(); renderCanvas();
+  root.addEventListener('input', onHtmlInput);
+  root.addEventListener('keydown', onHtmlKey);
 }
 
 export async function leave() {
@@ -52,9 +65,32 @@ export async function leave() {
   return true;
 }
 export const dirty = () => !!st.dirty;
-export function refresh() { if (!st.dirty) { drawRight(); } }
+/** Pick up changes made elsewhere (another tab, the sequence page) while this email has no unsaved edits. */
+export function refresh() {
+  if (st.dirty || st.saving || !root) return;
+  const fresh = savedCopy();
+  if (fresh && JSON.stringify(fresh) !== st.base) {
+    st.W = fresh;
+    st.base = JSON.stringify(fresh);
+    if (st.sel && !blockById(st.sel)) { st.sel = null; st.right = 'email'; }
+    drawTop(); drawLeft(); drawRight(); renderCanvas();
+    return;
+  }
+  drawRight();
+}
 
-const seq = () => seqById(st.seqId);
+/** The version of this email currently saved on the server. */
+function savedCopy() {
+  if (st.tplId) {
+    const t = (D().templates || []).find((x) => x.id === st.tplId);
+    return t ? { ...clone(t.step), id: t.id, name: t.name } : null;
+  }
+  const sq = seqById(st.seqId);
+  const s = sq && sq.steps.find((x) => x.id === st.W.id);
+  return s ? clone(s) : null;
+}
+
+const seq = () => (st.tplId ? { id: null, name: 'My template', deckChoice: 'off', steps: [st.W] } : seqById(st.seqId));
 const blocks = () => st.W.blocks;
 const blockById = (id) => blocks().find((b) => b.id === id);
 const stepIndex = () => seq().steps.findIndex((s) => s.id === st.W.id);
@@ -95,12 +131,31 @@ async function save() {
   st.saving = true;
   drawSaveState();
   try {
-    const s = clone(seq());
-    const i = s.steps.findIndex((x) => x.id === st.W.id);
-    s.steps[i] = clone(st.W);
-    if (st.W.deck && st.W.deck !== 'inherit') s.deckChoice = st.W.deck;
-    await api('PUT', `/api/sequences/${s.id}`, s);
+    // Don't silently overwrite a version that changed elsewhere after this editor opened.
+    await loadState();
+    const fresh = savedCopy();
+    if (!fresh) throw new Error('This email no longer exists (it was deleted elsewhere). Copy anything you need, then go back.');
+    const freshJson = JSON.stringify(fresh);
+    if (freshJson !== st.base && freshJson !== JSON.stringify(st.W)) {
+      const mine = await confirmBox('This email was changed somewhere else (another tab or window) after you opened it. Save your version over it, or load the other version?', { title: 'Email changed elsewhere', okText: 'Save my version' });
+      if (!mine) {
+        st.W = fresh; st.base = freshJson; st.dirty = false; st.saving = false;
+        if (st.sel && !blockById(st.sel)) { st.sel = null; st.right = 'email'; }
+        drawTop(); drawLeft(); drawRight(); renderCanvas();
+        return;
+      }
+    }
+    if (st.tplId) {
+      await api('PUT', `/api/templates/${st.tplId}`, { name: st.W.name, step: clone(st.W) });
+    } else {
+      const s = clone(seq());
+      const i = s.steps.findIndex((x) => x.id === st.W.id);
+      s.steps[i] = clone(st.W);
+      if (st.W.deck && st.W.deck !== 'inherit') s.deckChoice = st.W.deck;
+      await api('PUT', `/api/sequences/${s.id}`, s);
+    }
     st.dirty = false;
+    st.base = JSON.stringify(st.W);
     st.savedAt = new Date();
     await loadState();
   } catch (e) { fail(e); }
@@ -113,16 +168,18 @@ function drawTop() {
   const s = seq();
   const leads = D().leads.slice(0, 300);
   $('[data-top]', root).innerHTML = `
-    <a class="btn ghost icon" href="#/sequences/${s.id}" title="Back to sequence">${icon('left')}</a>
-    <div class="title"><input data-name value="${esc(st.W.name)}"><small>${esc(s.name)} · email ${stepIndex() + 1} of ${s.steps.length}</small></div>
+    <a class="btn ghost icon" href="${st.tplId ? '#/templates' : `#/sequences/${s.id}`}" title="Back">${icon('left')}</a>
+    <div class="title"><input data-name value="${esc(st.W.name)}"><small>${st.tplId ? 'Template · changes here don’t affect emails already in sequences' : `${esc(s.name)} · email ${stepIndex() + 1} of ${s.steps.length}`}</small></div>
     <span class="save-state" data-save-state></span>
     <div class="right row" style="gap:8px">
-      <div class="seg" data-modeseg><button data-mode="edit" class="${st.mode === 'edit' ? 'on' : ''}">${icon('pen')} Edit</button><button data-mode="preview" class="${st.mode === 'preview' ? 'on' : ''}">${icon('eye')} Preview</button></div>
+      <div class="seg" data-modeseg><button data-mode="edit" class="${st.mode === 'edit' ? 'on' : ''}">${icon('pen')} Edit</button><button data-mode="preview" class="${st.mode === 'preview' ? 'on' : ''}">${icon('eye')} Preview</button><button data-mode="html" class="${st.mode === 'html' ? 'on' : ''}" title="Edit the email's HTML code">${icon('code')} HTML</button></div>
       <select class="input sm" data-lead style="width:190px" title="Fill merge fields with this lead">${['<option value="">Sample: Sarah · Acme Ventures</option>', ...leads.map((l) => `<option value="${l.id}" ${st.leadId === l.id ? 'selected' : ''}>${esc(fullName(l))}${l.company ? ' · ' + esc(l.company) : ''}</option>`)].join('')}</select>
       <div class="seg"><button data-device="desktop" class="${st.device === 'desktop' ? 'on' : ''}" title="Desktop">${icon('monitor')}</button><button data-device="mobile" class="${st.device === 'mobile' ? 'on' : ''}" title="Mobile">${icon('phone')}</button><button data-darkt class="${st.dark ? 'on' : ''}" title="Dark mode">${icon('moon')}</button></div>
       <button class="btn icon sm" data-undo title="Undo (Ctrl+Z)">${icon('undo')}</button>
       <button class="btn sm" data-test>${icon('mail')} Send test</button>
       <button class="btn sm" data-export>${icon('code')} Export HTML</button>
+      <button class="btn sm" data-download title="Download for approval or as an HTML file">${icon('download')} Download</button>
+      ${st.tplId ? '' : `<button class="btn sm" data-savetpl title="Save this design to Templates">${icon('star')} Save as template</button>`}
       <button class="btn primary sm" data-save>Save</button>
     </div>`;
   drawSaveState();
@@ -138,6 +195,12 @@ function drawLeft() {
   const custom = D().customBlocks || [];
   const tabs = `<div class="tabs">${[['blocks', 'Blocks'], ['layers', 'Layers'], ['saved', `Saved${custom.length ? ` (${custom.length})` : ''}`]].map(([k, l]) => `<button data-left="${k}" class="${st.left === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   let body = '';
+  if (st.W.rawHtml) {
+    body = `<div class="notice warn">${icon('code')}<div class="small"><b>This email uses your custom HTML.</b> It’s sent exactly as written in the HTML tab, so the blocks are paused (they’re kept, not deleted).</div></div><div class="sp8"></div>
+      <div class="col" style="gap:6px"><button class="btn sm" data-mode="html">${icon('code')} Open HTML</button><button class="btn sm danger" data-backtodesign>${icon('undo')} Back to the design</button></div>`;
+    $('[data-left]', root).innerHTML = `<div class="ed-pane">${body}</div>`;
+    return;
+  }
   if (st.left === 'blocks') {
     body = `<div class="small muted" style="margin-bottom:10px">Click to add ${st.sel ? 'below the selected block' : 'above the signature'}.</div><div class="blk-lib">${Object.entries(R.BLOCKS).map(([k, b]) => `<button class="blk" data-add="${k}"><span class="ic">${esc(b.icon)}</span><span><b>${esc(b.label)}</b><small>${esc(b.hint)}</small></span></button>`).join('')}</div>`;
   } else if (st.left === 'layers') {
@@ -162,12 +225,14 @@ function ctxFor() {
 
 function renderCanvas() {
   if (!frame) return;
+  root.classList.toggle('html-mode', st.mode === 'html');
+  if (st.mode === 'html') { drawHtml(); return; }
   const canvas = $('[data-canvas]', root);
   canvas.classList.toggle('mobile', st.device === 'mobile');
   const scroll = canvas.scrollTop;
   const h = frame.offsetHeight;
   if (h) frame.style.minHeight = h + 'px';
-  const doc = { subject: st.W.subjects[st.W.subjectIndex || 0], preheader: st.W.preheader, blocks: st.W.blocks };
+  const doc = { subject: st.W.subjects[st.W.subjectIndex || 0], preheader: st.W.preheader, blocks: st.W.blocks, rawHtml: st.W.rawHtml };
   fillFrame(frame, R.renderEmail(doc, ctxFor()).html, {
     onLoad: (d) => {
       canvas.scrollTop = scroll;
@@ -306,7 +371,7 @@ function emailInspector() {
   const stats = stepStats(s, W);
   const words = R.bodyWords(W);
   const ctx = ctxFor();
-  const warns = R.preflight({ subject: W.subjects[W.subjectIndex || 0], preheader: W.preheader, blocks: W.blocks }, { ...ctx, editable: false, resolve: undefined });
+  const warns = R.preflight({ subject: W.subjects[W.subjectIndex || 0], preheader: W.preheader, blocks: W.blocks, rawHtml: W.rawHtml }, { ...ctx, editable: false, resolve: undefined });
   const deck = D().settings.deck || {};
   const dm = W.deck || 'inherit';
   return `
@@ -320,12 +385,12 @@ function emailInspector() {
     <input class="input sm" data-w="preheader" value="${esc(W.preheader || '')}" placeholder="Preview text shown after the subject">
     <div class="tiny faint">${(W.preheader || '').length} characters · aim for 40–100</div>
   </div>
-  <div class="insp-sec"><h5>Timing</h5>
+  ${st.tplId ? '' : `<div class="insp-sec"><h5>Timing</h5>
     <div class="seg" data-timing><button data-v="delay" class="${!W.fixedDate ? 'on' : ''}">After previous</button><button data-v="date" class="${W.fixedDate ? 'on' : ''}">Fixed date</button></div>
     <div class="row">${W.fixedDate ? `<input type="date" class="input sm" data-w="fixedDate" value="${esc(W.fixedDate)}">` : `<input type="number" min="0" class="input sm" style="width:90px" data-w="delayDays" value="${Number(W.delayDays) || 0}" ${i === 0 ? 'disabled' : ''}><span class="small muted">${i === 0 ? 'first email (day 0)' : 'days after previous'}</span>`}</div>
     <div class="row"><span class="small muted" style="width:90px">Send time</span><input type="time" class="input sm" style="width:120px" data-w="sendTime" value="${esc(W.sendTime || '10:00')}"><span class="tiny faint">${esc(D().settings.sending.timezone)}</span></div>
     ${i > 0 ? `<label class="switch"><input type="checkbox" data-w="threadReply" ${W.threadReply ? 'checked' : ''}><span class="tr"></span>Send as reply in the same thread</label>` : ''}
-  </div>
+  </div>`}
   <div class="insp-sec"><h5>Sponsorship deck (PDF)</h5>
     <div class="seg" data-deck>${[['inherit', `Default (${s.deckChoice || 'off'})`], ['attach', 'Attach'], ['link', 'Link'], ['off', 'Off']].map(([k, l]) => `<button data-v="${k}" class="${dm === k ? 'on pink' : ''}">${l}</button>`).join('')}</div>
     <div class="tiny faint">Your choice here becomes this sequence’s remembered default. ${deck.fileName ? `File: ${esc(deck.fileName)} (${(deck.size / 1048576).toFixed(1)} MB)` : 'No deck uploaded.'}${deck.size > 10 * 1048576 ? ' <b style="color:#F59E0B">Over 10 MB, consider linking instead.</b>' : ''}${deckMode() === 'link' && !deck.hostedUrl ? ' <b style="color:#F59E0B">Add a hosted deck URL in Settings for the link option.</b>' : ''}</div>
@@ -343,6 +408,8 @@ function emailInspector() {
     <div class="row"><span class="tiny ${(W.linkedin || '').length > 300 ? '' : 'faint'}" ${(W.linkedin || '').length > 300 ? 'style="color:#F59E0B"' : ''}>${(W.linkedin || '').length}/300 (connection note limit)</span><button class="btn xs right" data-copyshort="linkedin">${icon('copy')} Copy</button></div>
   </div>`;
 }
+
+const BRANDS_HINT = '<div class="tiny faint">Change, add or reorder the logos in <a href="#/settings#brands">Settings → Hosts &amp; sponsors</a>.</div>';
 
 const fld = {
   text: (b, k, label, ph) => `<label class="field"><span>${label}</span><input class="input sm" data-b="${k}" value="${esc(getPath(b, k) || '')}" placeholder="${esc(ph || '')}"></label>`,
@@ -369,7 +436,8 @@ function itemsEditor(b, kind) {
 
 function actionFields(b) {
   const a = b.action || 'reply';
-  return fld.sel(b, 'action', 'When clicked', [['reply', 'Reply by email (pre-filled subject)'], ['tickets', 'Open ticket page'], ['whatsapp', 'Open WhatsApp chat with sender'], ['deck', 'Open sponsorship deck'], ['url', 'Custom link']]) +
+  return fld.sel(b, 'action', 'When clicked', [['talk', 'Let’s talk: they send you their details'], ['reply', 'Reply by email (pre-filled subject)'], ['tickets', 'Open ticket page'], ['whatsapp', 'Open WhatsApp chat with sender'], ['deck', 'Open sponsorship deck'], ['url', 'Custom link']]) +
+    (a === 'talk' ? `<div class="tiny faint">${D().settings.talkFormUrl ? 'Opens your form link (Settings → Event & tiers).' : 'Opens a pre-filled email to you with Name, Company, Role, Phone/WhatsApp, Best time and Topic. When they send it, the lead moves to Replied automatically. Add a form link in Settings → Event & tiers to use a web form instead.'}</div>` : '') +
     (a === 'reply' ? fld.text(b, 'replySubject', 'Reply subject', 'Reserve Bronze for {{company}}') : '') +
     (a === 'url' ? fld.text(b, 'url', 'Link URL', 'https://') : '') +
     (a === 'whatsapp' ? fld.area(b, 'waText', 'Pre-filled WhatsApp message', 2) : '');
@@ -380,7 +448,7 @@ function blockInspector(raw) {
   const T = R.BLOCKS[b.type] || {};
   let f = '';
   switch (b.type) {
-    case 'header': f = fld.sw(b, 'showParadigia', 'Paradigia logo') + fld.sw(b, 'showMobihub', 'mobi hub | events logo') + fld.sw(b, 'showSunstrike', 'Sunstrike logo'); break;
+    case 'header': f = fld.sw(b, 'showHosts', 'Host logos (mobi hub | events, Paradigia)') + fld.sw(b, 'showSponsors', 'Sponsor logos too (“Sponsored by”)') + BRANDS_HINT; break;
     case 'hero': f = imagePicker(b, 'image') + fld.text(b, 'eyebrow', 'Pink small caps') + fld.text(b, 'headline', 'Headline') + fld.text(b, 'dateLine', 'Date line') + fld.text(b, 'alt', 'Image alt text') + fld.text(b, 'link', 'Image link (optional)', 'https://'); break;
     case 'heading': f = fld.text(b, 'eyebrow', 'Pink label') + fld.text(b, 'title', 'Title') + fld.sel(b, 'align', 'Align', [['left', 'Left'], ['center', 'Center']]) + fld.sw(b, 'underline', 'Pink underline') + fld.bg(b); break;
     case 'text': f = `<div class="notice info">${icon('info')}<div class="small">Click the text in the canvas to edit it. A toolbar appears for bold, links, bullets and merge fields.</div></div>` + fld.bg(b) + fld.sel(b, 'pad', 'Spacing', [['s', 'Tight'], ['m', 'Normal'], ['l', 'Roomy']]) + fld.sel(b, 'align', 'Align', [['left', 'Left'], ['center', 'Center']]); break;
@@ -388,15 +456,15 @@ function blockInspector(raw) {
     case 'tierCard': f = fld.sel(b, 'tier', 'Tier', [['bronze', 'Bronze · $3,000'], ['silver', 'Silver · $6,000'], ['gold', 'Gold · $10,000'], ['premium', 'Premium · $18,000'], ['lead', "Lead's tier interest"]]) + fld.text(b, 'badge', 'Badge (empty = none)', 'BEST ENTRY POINT') + fld.sw(b, 'showBenefits', 'Show package benefits') + fld.num(b, 'maxBenefits', 'Max benefits shown (0 = all)') + fld.sw(b, 'showUpgrades', 'Show upgrade line (higher tiers)') + `<div class="tiny faint">Prices and benefits come from Settings → Event & tiers.</div>`; break;
     case 'comparison': f = fld.text(b, 'title', 'Title') + fld.sel(b, 'highlight', 'Highlight column', [['bronze', 'Bronze'], ['silver', 'Silver'], ['gold', 'Gold'], ['premium', 'Premium'], ['none', 'None']]) + fld.text(b, 'badge', 'Highlight label', 'BEST ENTRY POINT') + fld.area(b, 'caption', 'Caption (optional)', 2); break;
     case 'callout': f = fld.text(b, 'eyebrow', 'Pink label') + fld.area(b, 'text', 'Text', 3) + itemsEditor(b, 'callout'); break;
-    case 'cta': f = fld.text(b, 'text', 'Button text') + actionFields(b) + fld.text(b, 'note', 'Small note under button (optional)'); break;
-    case 'secondaryCta': f = fld.text(b, 'text', 'Text') + actionFields(b); break;
+    case 'cta': f = fld.text(b, 'text', 'Button text') + actionFields(b) + fld.text(b, 'note', 'Small note under button (optional)') + (b.action === 'tickets' ? fld.sw(b, 'showPromo', `Show ticket discount code${D().settings.event.promoCode ? ` (${esc(D().settings.event.promoCode)})` : ' (none set in Settings)'}`) : ''); break;
+    case 'secondaryCta': f = fld.text(b, 'text', 'Text') + actionFields(b) + fld.sw(b, 'ticketButton', 'Show “Buy Ticket” button next to it') + (b.ticketButton ? fld.text(b, 'ticketText', 'Ticket button text', 'Buy Ticket') + fld.sw(b, 'showPromo', `Show ticket discount code${D().settings.event.promoCode ? ` (${esc(D().settings.event.promoCode)})` : ' (none set in Settings)'}`) + '<div class="tiny faint">Opens the ticket link from Settings → Event & tiers.</div>' : ''); break;
     case 'image': f = imagePicker(b, 'src') + fld.text(b, 'alt', 'Alt text (required)') + fld.text(b, 'link', 'Link (optional)') + fld.text(b, 'caption', 'Caption (optional)') + fld.sw(b, 'full', 'Full width'); break;
     case 'divider': f = fld.sel(b, 'style', 'Style', [['wave', 'Pink wave line art'], ['pink', 'Short pink bar'], ['line', 'Thin line']]) + fld.bg(b); break;
     case 'spacer': f = fld.num(b, 'height', 'Height (px)') + fld.bg(b); break;
     case 'team': {
       const team = D().team;
       const sel = b.members || team.map((m) => m.id);
-      f = fld.text(b, 'heading', 'Heading') + fld.sw(b, 'showManagement', 'Show MANAGEMENT row') + fld.sw(b, 'showSales', 'Show SALES TEAM row') +
+      f = fld.text(b, 'heading', 'Heading') + fld.sw(b, 'showManagement', 'Show management row') + fld.sw(b, 'showSales', 'Show sales team row') + fld.sw(b, 'groupLabels', 'Show “MANAGEMENT” / “SALES TEAM” labels') +
         fld.sel(b, 'size', 'Photo size', [['small', 'Small (44px)'], ['medium', 'Medium (56px)']]) +
         fld.sel(b, 'labels', 'Names and roles', [['hover', 'Show on hover'], ['show', 'Always show under photos']]) +
         fld.sel(b, 'perRow', 'Max photos per row', [['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']]) +
@@ -407,13 +475,14 @@ function blockInspector(raw) {
     }
     case 'signature': f = `<div class="notice info">${icon('info')}<div class="small">Each email uses the signature of the account that sends it. Preview a different one here.</div></div>` +
       `<label class="field"><span>Preview signature</span><select class="input sm" data-sigprev>${D().signatures.map((s) => `<option value="${s.id}" ${st.sigId === s.id ? 'selected' : ''}>${esc(s.label || s.name)}</option>`).join('')}</select></label><a class="btn xs" href="#/signatures">${icon('pen')} Edit signatures</a>`; break;
-    case 'footer': f = fld.area(b, 'note', 'Why they received this', 3) + `<div class="tiny faint">The unsubscribe link is added automatically (Settings → Unsubscribe).</div>`; break;
+    case 'html': f = `<label class="field"><span>HTML code</span><textarea class="code" data-b="code" spellcheck="false" style="height:300px">${esc(b.code || '')}</textarea></label>` + fld.bg(b) + fld.sw(b, 'padded', 'Side padding (turn off for full-width designs)') + '<div class="tiny faint">Use inline styles (style="…") for email clients. Merge fields like {{first_name}} work. Scripts, forms and iframes are removed. Width is 600px.</div>'; break;
+    case 'footer': f = fld.sw(b, 'showSponsors', '“Sponsored by” logos') + fld.area(b, 'note', 'Why they received this', 3) + `<div class="tiny faint">The unsubscribe link is added automatically (Settings → Unsubscribe).</div>` + BRANDS_HINT; break;
     default: f = '';
   }
   return `<div class="insp-sec"><div class="row"><span class="ic" style="color:#FF0055;font-weight:700">${esc(T.icon || '')}</span><b>${esc(T.label || b.type)}</b></div>${f}</div>
     <div class="insp-sec"><h5>Block</h5><div class="row wrap" style="gap:6px">
       <button class="btn xs" data-bact="up">${icon('up')} Up</button><button class="btn xs" data-bact="down">${icon('down')} Down</button>
-      <button class="btn xs" data-bact="dup">${icon('dup')} Duplicate</button><button class="btn xs" data-bact="save">${icon('star')} Save as reusable</button>
+      <button class="btn xs" data-bact="dup">${icon('dup')} Duplicate</button><button class="btn xs" data-bact="save">${icon('star')} Save as reusable</button>${b.type !== 'html' ? `<button class="btn xs" data-bact="tohtml" title="Turn this block into editable HTML code">${icon('code')} Edit as HTML</button>` : ''}
       <button class="btn xs danger" data-bact="del">${icon('trash')} Delete</button></div></div>`;
 }
 
@@ -432,7 +501,12 @@ function addBlock(type, preset) {
   const list = blocks();
   let at = list.length;
   if (st.sel) at = list.findIndex((x) => x.id === st.sel) + 1;
-  else { const sig = list.findIndex((x) => x.type === 'signature'); if (sig >= 0) at = sig; }
+  else {
+    // No selection: add above the signature, or above the footer if there is no signature.
+    const sig = list.findIndex((x) => x.type === 'signature');
+    const foot = list.findIndex((x) => x.type === 'footer');
+    if (sig >= 0) at = sig; else if (foot >= 0) at = foot;
+  }
   list.splice(at, 0, b);
   st.sel = b.id;
   st.right = 'block';
@@ -491,7 +565,7 @@ function onChange(e) {
     if (!b) return;
     snapshot();
     setPath(b, t.dataset.b, t.type === 'checkbox' ? t.checked : t.value);
-    changed({ right: t.dataset.b === 'action' });
+    changed({ right: t.dataset.b === 'action' || t.dataset.b === 'ticketButton' });
     return;
   }
   if (t.dataset.member) {
@@ -510,15 +584,27 @@ async function onClick(e) {
   const b = e.target.closest('button, [data-pick], [data-merge]');
   if (!b) return;
   if (b.dataset.mode) { st.mode = b.dataset.mode; drawTop(); renderCanvas(); }
+  else if (b.matches('[data-download]')) { await save(); downloadMenu(b, { seq: seq(), step: st.W, index: Math.max(0, stepIndex()), templateId: st.tplId, name: st.W.name }); }
+  else if (b.matches('[data-backtodesign]')) {
+    if (!(await confirmBox('Go back to the block design? Your custom HTML for this email will be removed (you can undo this).', { okText: 'Back to the design' }))) return;
+    snapshot(); delete st.W.rawHtml; st.mode = 'edit'; changed({ right: true, left: true }); drawTop(); renderCanvas();
+  }
+  else if (b.matches('[data-htmlcopy]')) copyText($('[data-htmlcode]', root).value, 'HTML copied');
+  else if (b.matches('[data-htmldl]')) download(`${st.W.name.replace(/[\\/:*?"<>|·]+/g, '-')}.html`, $('[data-htmlcode]', root).value, 'text/html');
   else if (b.dataset.device) { st.device = b.dataset.device; drawTop(); renderCanvas(); }
   else if (b.matches('[data-darkt]')) { st.dark = !st.dark; drawTop(); renderCanvas(); }
   else if (b.matches('[data-undo]')) undo();
   else if (b.matches('[data-save]')) { st.dirty = true; await save(); ok('Saved'); }
-  else if (b.matches('[data-test]')) { await save(); sendTest(seq(), st.W); }
-  else if (b.matches('[data-export]')) { await save(); openExport(seq(), st.W); }
+  else if (b.matches('[data-test]')) { await save(); sendTest(seq(), st.W, { templateId: st.tplId }); }
+  else if (b.matches('[data-export]')) { await save(); openExport(seq(), st.W, { templateId: st.tplId }); }
+  else if (b.matches('[data-savetpl]')) {
+    const n = await prompt1('Template name', st.W.name, { title: 'Save as template' });
+    if (!n) return;
+    try { await saveAsTemplate(st.W, { name: n, description: `From ${seq().name}` }); ok('Saved to Templates → My templates'); } catch (err) { fail(err); }
+  }
   else if (b.dataset.left) { st.left = b.dataset.left; drawLeft(); }
   else if (b.dataset.right) { st.right = b.dataset.right; drawRight(); }
-  else if (b.dataset.add) addBlock(b.dataset.add);
+  else if (b.dataset.add) { if (st.W.rawHtml) { fail('This email uses custom HTML. Go back to the design to add blocks.'); return; } addBlock(b.dataset.add); }
   else if (b.dataset.use) { const c = (D().customBlocks || []).find((x) => x.id === b.dataset.use); if (c) addBlock(c.block.type, c.block); }
   else if (b.dataset.delc) { if (await confirmBox('Delete this saved block? Emails that already use it keep their copy.', { okText: 'Delete', danger: true })) { await api('DELETE', `/api/customBlocks/${b.dataset.delc}`); await loadState(); drawLeft(); } }
   else if (b.dataset.lmove) { const [i, dir] = b.dataset.lmove.split('|').map(Number); moveBlock(blocks()[i].id, dir); }
@@ -575,6 +661,15 @@ async function onClick(e) {
     if (b.dataset.bact === 'down') moveBlock(id, 1);
     if (b.dataset.bact === 'dup') { snapshot(); const i = blocks().indexOf(blk); const c = { ...clone(blk), id: uid('b') }; blocks().splice(i + 1, 0, c); st.sel = c.id; changed({ right: true, left: true }); }
     if (b.dataset.bact === 'del') { snapshot(); st.W.blocks = blocks().filter((x) => x.id !== id); st.sel = null; st.right = 'email'; changed({ right: true, left: true }); }
+    if (b.dataset.bact === 'tohtml') {
+      snapshot();
+      const lead = st.leadId ? leadById(st.leadId) : Seed.sampleLead();
+      const code = R.renderBlock(blk, previewCtx(lead, { signatureId: st.sigId, deckMode: deckMode() }));
+      const i = blocks().indexOf(blk);
+      blocks()[i] = { id: blk.id, type: 'html', code, bg: 'light', padded: false };
+      changed({ right: true, left: true });
+      ok('Block converted to HTML. Edit the code in the right panel.');
+    }
     if (b.dataset.bact === 'save') {
       const name = await prompt1('Name for this reusable block', layerName(blk), { title: 'Save block' });
       if (!name) return;
@@ -603,7 +698,7 @@ function wireLayerDrag() {
 /** Darken an uploaded photo and fade it into the night-water indigo, like the deck cover. */
 async function heroize(file) {
   const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
-  const W = 1200, H = 620;
+  const W = 1200, H = 500;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   const k = Math.max(W / img.width, H / img.height);
@@ -611,14 +706,73 @@ async function heroize(file) {
   g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
   g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(0, 0, W, H);
   const gr = g.createLinearGradient(0, 0, 0, H);
-  gr.addColorStop(0, 'rgba(26,16,64,0.18)'); gr.addColorStop(0.35, 'rgba(26,16,64,0.18)'); gr.addColorStop(1, 'rgba(26,16,64,1)');
+  gr.addColorStop(0, 'rgba(26,16,64,0.16)'); gr.addColorStop(0.7, 'rgba(26,16,64,0.16)'); gr.addColorStop(0.88, 'rgba(26,16,64,0.6)'); gr.addColorStop(1, 'rgba(26,16,64,1)');
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
   const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.82));
   return new File([blob], 'hero-' + file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
 
+/* ------------------------------------------------------------ HTML tab */
+let htmlT;
+function previewDoc() { return { subject: st.W.subjects[st.W.subjectIndex || 0], preheader: st.W.preheader, blocks: st.W.blocks, rawHtml: st.W.rawHtml }; }
+function htmlCtx() {
+  const lead = st.leadId ? leadById(st.leadId) : Seed.sampleLead();
+  return previewCtx(lead, { signatureId: st.sigId, deckMode: deckMode(), forceDark: st.dark, mobile: st.device === 'mobile' });
+}
+
+function drawHtml() {
+  const box = $('[data-html]', root);
+  const custom = !!st.W.rawHtml;
+  const code = R.htmlSource(previewDoc(), htmlCtx());
+  box.innerHTML = `<div class="html-code">
+      <div class="html-bar">
+        <div class="grow">${custom
+          ? `<b>Custom HTML</b> <span class="muted">· this email is sent exactly as written below. Changes save automatically.</span>`
+          : `<b>HTML of your design</b> <span class="muted">· start typing to customise it. From then on this email is sent as your HTML (the blocks are kept).</span>`}</div>
+        <button class="btn xs" data-htmlcopy>${icon('copy')} Copy</button><button class="btn xs" data-htmldl>${icon('download')} .html</button>
+        ${custom ? `<button class="btn xs danger" data-backtodesign>${icon('undo')} Back to design</button>` : ''}
+      </div>
+      <textarea class="code html-area" data-htmlcode spellcheck="false" wrap="off"></textarea>
+      <div class="tiny faint" style="padding:6px 2px 0">Merge fields like {{first_name}} and {{company}} work anywhere, including inside links. Images under /brand and /uploads are embedded automatically when sending. Scripts and forms are removed.</div>
+    </div>
+    <div class="html-prev ${st.device === 'mobile' ? 'mobile' : ''}"><iframe data-htmlprev title="HTML preview"></iframe></div>`;
+  $('[data-htmlcode]', box).value = code;
+  refreshHtmlPreview();
+}
+
+function refreshHtmlPreview() {
+  const f = $('[data-htmlprev]', root);
+  if (f) fillFrame(f, R.renderEmail(previewDoc(), htmlCtx()).html, { autoHeight: false });
+}
+
+function onHtmlInput(e) {
+  if (!e.target.matches('[data-htmlcode]')) return;
+  const val = e.target.value;
+  clearTimeout(htmlT);
+  htmlT = setTimeout(() => {
+    const first = !st.W.rawHtml;
+    if (!st.typingSnap) { snapshot(); st.typingSnap = true; setTimeout(() => { st.typingSnap = false; }, 1500); }
+    st.W.rawHtml = val;
+    changed({ canvas: false, right: first, left: first });
+    if (first) {
+      const bar = $('.html-bar .grow', root);
+      if (bar) bar.innerHTML = '<b>Custom HTML</b> <span class="muted">· this email is sent exactly as written below. Changes save automatically.</span>';
+    }
+    refreshHtmlPreview();
+  }, 350);
+}
+
+function onHtmlKey(e) {
+  if (!e.target.matches('[data-htmlcode]') || e.key !== 'Tab') return;
+  e.preventDefault();
+  const t = e.target;
+  const a = t.selectionStart;
+  t.setRangeText('  ', a, t.selectionEnd, 'end');
+  t.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 /* ------------------------------------------------------- test & export */
-export function sendTest(sq, step) {
+export function sendTest(sq, step, opts = {}) {
   const d = D();
   const accts = connectedAccounts();
   if (!accts.length) { fail('Connect a Gmail account first (Settings → Gmail).'); return; }
@@ -661,7 +815,7 @@ export function sendTest(sq, step) {
       const to = $('[data-to]', m.el).value.trim();
       const name = $('[data-tname]', m.el).value.trim();
       const company = $('[data-tcompany]', m.el).value.trim();
-      const r = await api('POST', '/api/test-send', { sequenceId: sq.id, stepId: step.id, to, accountEmail: $('[data-from]', m.el).value, leadId: $('[data-lead]', m.el).value, deckMode: deck, testName: name, testCompany: company });
+      const r = await api('POST', '/api/test-send', { sequenceId: sq.id, stepId: step.id, templateId: opts.templateId || undefined, to, accountEmail: $('[data-from]', m.el).value, leadId: $('[data-lead]', m.el).value, deckMode: deck, testName: name, testCompany: company });
       if (to !== d.settings.testEmail || name !== (tl.name || '') || company !== (tl.company || '')) api('PUT', '/api/settings', { testEmail: to, testLead: { name, company } }).catch(() => {});
       m.close();
       ok(`Test sent to ${r.to}. Check your inbox (and Promotions/Spam the first time).`);
@@ -669,7 +823,7 @@ export function sendTest(sq, step) {
   };
 }
 
-export function openExport(sq, step) {
+export function openExport(sq, step, opts = {}) {
   const d = D();
   let keep = false;
   let leadId = '';
@@ -686,7 +840,7 @@ export function openExport(sq, step) {
   });
   const load = async () => {
     try {
-      const r = await api('GET', `/api/export?sequenceId=${encodeURIComponent(sq.id)}&stepId=${encodeURIComponent(step.id)}&leadId=${encodeURIComponent(leadId)}&keepTags=${keep ? 1 : 0}`);
+      const r = await api('GET', `/api/export?sequenceId=${encodeURIComponent(sq.id || '')}&stepId=${encodeURIComponent(step.id)}&templateId=${encodeURIComponent(opts.templateId || '')}&leadId=${encodeURIComponent(leadId)}&keepTags=${keep ? 1 : 0}`);
       html = r.html;
       $('[data-code]', m.el).value = html;
       fillFrame($('[data-prev]', m.el), html, { autoHeight: false });

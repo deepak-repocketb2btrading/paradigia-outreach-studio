@@ -107,6 +107,7 @@ export function openLead(id, opts = {}) {
       ${f('email', 'Email', 'email')}${f('company', 'Company')}
       ${f('title', 'Job title')}${f('phone', 'Phone / WhatsApp')}
       <label class="field span2"><span>LinkedIn URL</span><input class="input" data-f="linkedin" value="${esc(lead.linkedin || '')}"></label>
+      <label class="field span2"><span>Interests / products</span><input class="input" data-f="interests" value="${esc(lead.interests || '')}" placeholder="e.g. PC/Laptops, Mobile"></label>
       <label class="field span2"><span>Lists / tags (comma separated)</span><input class="input" data-f="tags" value="${esc((lead.tags || []).join(', '))}"></label>
     </div><div class="sp16"></div><button class="btn primary" data-save>Save details</button>`;
   }

@@ -21,10 +21,14 @@ const store = require('./lib/store')(DATA, ROOT);
 const google = require('./lib/google')(store, PORT);
 const engine = require('./lib/engine')(store, google, bus);
 const sync = require('./lib/sync')(store, google, engine, bus);
+const PRender = require('./shared/render');
+const PSeed = require('./shared/seed');
+const PApproval = require('./shared/approval');
+const PReview = require('./shared/review');
 engine.setSync(sync);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.ico': 'image/x-icon', '.csv': 'text/csv' };
-const COLLECTIONS = new Set(['leads', 'team', 'signatures', 'sequences', 'customBlocks']);
+const COLLECTIONS = new Set(['leads', 'team', 'signatures', 'sequences', 'customBlocks', 'templates']);
 
 /* ----------------------------------------------------------------- helpers */
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
@@ -90,7 +94,7 @@ function publicState() {
 function cleanLead(input, existing) {
   const l = { ...(existing || {}), ...input };
   l.email = String(l.email || '').trim().toLowerCase();
-  for (const k of ['firstName', 'lastName', 'company', 'phone', 'linkedin', 'title', 'tierInterest']) l[k] = String(l[k] == null ? '' : l[k]).trim();
+  for (const k of ['firstName', 'lastName', 'company', 'phone', 'linkedin', 'title', 'tierInterest', 'interests']) l[k] = String(l[k] == null ? '' : l[k]).trim();
   l.tags = Array.isArray(l.tags) ? Array.from(new Set(l.tags.map((t) => String(t).trim()).filter(Boolean))) : [];
   l.notes = Array.isArray(l.notes) ? l.notes : [];
   l.status = l.status || 'new';
@@ -313,8 +317,94 @@ route('POST', '/api/test-send', async (req, res) => send(res, 200, await engine.
 route('POST', '/api/reply', async (req, res) => send(res, 200, await engine.sendReply(await readJson(req))));
 route('POST', '/api/sync', async (req, res) => send(res, 200, await sync.syncAll()));
 
+/* Approval sheet and email previews as real pages, so they open in a browser tab (or download with ?download=1). */
+function previewHeaders(query, filename) {
+  const h = { 'Content-Type': 'text/html; charset=utf-8' };
+  if (query.get('download') === '1') {
+    const ascii = filename.replace(/[^\x20-\x7E]+/g, '-').replace(/["\\/:*?<>|]+/g, '-');
+    h['Content-Disposition'] = `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  }
+  return h;
+}
+
+route('GET', '/preview/approval', (req, res, { query }) => {
+  const db = store.db;
+  const templateId = query.get('templateId') || '';
+  const stepId = query.get('stepId') || '';
+  const keepTags = query.get('tags') === '1';
+  let seq = null;
+  let items;
+  let title;
+  let subtitle;
+  if (templateId) {
+    const t = (db.templates || []).find((x) => x.id === templateId) || PSeed.templates().find((x) => x.id === templateId);
+    if (!t) throw new HttpError(404, 'Template not found');
+    title = t.name; subtitle = 'Template';
+    items = [{ step: { ...t.step, id: t.id }, index: 0, total: 1 }];
+  } else {
+    seq = db.sequences.find((s) => s.id === query.get('sequenceId'));
+    if (!seq) throw new HttpError(404, 'Sequence not found');
+    const steps = stepId ? seq.steps.filter((s) => s.id === stepId) : seq.steps;
+    if (!steps.length) throw new HttpError(404, 'Email not found');
+    title = stepId ? steps[0].name : seq.name;
+    subtitle = stepId ? seq.name : (seq.audience || 'Email sequence');
+    items = steps.map((st) => ({ step: st, index: seq.steps.indexOf(st), total: seq.steps.length }));
+  }
+  const parts = items.map((it) => ({ ...it, html: engine.exportHtml({ sequenceId: seq && seq.id, stepId: it.step.id, templateId, keepTags }).html }));
+  const sig = db.signatures[0] || {};
+  const html = PApproval.buildApprovalPage({
+    title, subtitle, seq, parts, keepTags,
+    preparedBy: sig.name || (db.accounts[0] && db.accounts[0].displayName) || '',
+    mergeData: keepTags ? null : PRender.mergeData(PSeed.sampleLead(), { settings: db.settings, signature: sig, account: db.accounts[0] }),
+  });
+  send(res, 200, html, previewHeaders(query, `Approval - ${title}.html`));
+});
+
+route('GET', '/preview/email', (req, res, { query }) => {
+  const out = engine.exportHtml({ sequenceId: query.get('sequenceId'), stepId: query.get('stepId'), templateId: query.get('templateId') || '', keepTags: query.get('tags') === '1' });
+  send(res, 200, out.html, previewHeaders(query, `${query.get('name') || 'Email'}.html`));
+});
+
+/* Marketing review: an editable review page and a content .json to send out, and import of what comes back. */
+function reviewPack(query) {
+  const ids = (query.get('sequenceId') || '').split(',').filter(Boolean);
+  const seqs = (ids.length ? ids.map((id) => store.db.sequences.find((s) => s.id === id)) : store.db.sequences).filter(Boolean);
+  if (!seqs.length) throw new HttpError(404, 'Sequence not found');
+  return PReview.buildPack({ sequences: seqs, ...engine.previewContext(), lead: PSeed.sampleLead(), assetUri: engine.assetDataUri });
+}
+
+route('GET', '/preview/review', (req, res, { query }) => {
+  const pack = reviewPack(query);
+  const sources = { render: fs.readFileSync(path.join(ROOT, 'shared', 'render.js'), 'utf8'), review: fs.readFileSync(path.join(ROOT, 'shared', 'review.js'), 'utf8') };
+  send(res, 200, PReview.buildReviewPage(pack, sources), previewHeaders(query, `Review - ${pack.title}.html`));
+});
+
+route('GET', '/api/review-pack', (req, res, { query }) => {
+  const pack = reviewPack(query);
+  delete pack.assets;
+  const h = previewHeaders(query, `Content - ${pack.title}.json`);
+  h['Content-Type'] = 'application/json; charset=utf-8';
+  send(res, 200, JSON.stringify(pack, null, 2), h);
+});
+
+route('POST', '/api/review/check', async (req, res) => {
+  const file = await readJson(req);
+  try { send(res, 200, PReview.compare(file, store.db.sequences)); } catch (e) { throw new HttpError(400, e.message); }
+});
+
+route('POST', '/api/review/apply', async (req, res) => {
+  const { file, accept, record } = await readJson(req);
+  let out;
+  try { out = PReview.apply(file, store.db.sequences, Array.isArray(accept) ? accept : [], record !== false); } catch (e) { throw new HttpError(400, e.message); }
+  if (out.sequences.length) {
+    store.log('review', `Marketing review${out.reviewer ? ` from ${out.reviewer}` : ''} imported: ${out.changed} text change${out.changed === 1 ? '' : 's'} applied`);
+    engine.changed('sequences');
+  }
+  send(res, 200, out);
+});
+
 route('GET', '/api/export', (req, res, { query }) => {
-  const out = engine.exportHtml({ sequenceId: query.get('sequenceId'), stepId: query.get('stepId'), leadId: query.get('leadId') || '', keepTags: query.get('keepTags') === '1' });
+  const out = engine.exportHtml({ sequenceId: query.get('sequenceId'), stepId: query.get('stepId'), templateId: query.get('templateId') || '', leadId: query.get('leadId') || '', keepTags: query.get('keepTags') === '1' });
   send(res, 200, out);
 });
 

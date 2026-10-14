@@ -51,6 +51,7 @@
     { key: 'deck_link', label: 'Deck link' },
     { key: 'event_name', label: 'Event name' },
     { key: 'event_date', label: 'Event date' },
+    { key: 'promo_code', label: 'Ticket discount code' },
   ];
 
   /* ---------------------------------------------------------------- helpers */
@@ -59,10 +60,15 @@
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const digits = (s) => String(s || '').replace(/[^\d]/g, '');
   const money = (n) => '$' + Number(n || 0).toLocaleString('en-US');
-  const tierKey = (t) => {
-    const k = String(t || '').toLowerCase().trim();
-    return TIER_ORDER.includes(k) ? k : 'bronze';
+  /** The tier a lead asked about, or '' if the field holds something else (e.g. product categories). */
+  const leadTier = (t) => {
+    const k = String(t || '').toLowerCase();
+    return TIER_ORDER.find((x) => k.includes(x)) || '';
   };
+  const AUTO_BADGE = { bronze: 'BEST ENTRY POINT', silver: 'SOLID EXPOSURE', gold: 'HIGH VISIBILITY', premium: 'MAXIMUM VISIBILITY' };
+  const badgeText = (badge, tk) => (String(badge || '').toLowerCase() === 'auto' ? AUTO_BADGE[tk] || '' : badge);
+  /** Tier used when rendering: the lead's tier if it names one, otherwise Bronze (the entry point). */
+  const tierKey = (t) => leadTier(t) || 'bronze';
 
   function senderFrom(ctx) {
     const sig = ctx.signature || {};
@@ -101,6 +107,7 @@
       deck_link: (s.deck && s.deck.hostedUrl) || '',
       event_name: ev.name || 'An Evening on the Water',
       event_date: ev.dateLabel || 'December 9, 2026',
+      promo_code: ev.promoCode || '',
     };
   }
 
@@ -160,7 +167,7 @@
   /* ----------------------------------------------------------- block registry */
 
   const BLOCKS = {
-    header: { label: 'Header (logos)', icon: '▤', hint: 'Dark band with the three logos', defaults: { showParadigia: true, showMobihub: true, showSunstrike: true } },
+    header: { label: 'Header (logos)', icon: '▤', hint: 'Dark band with the host logos (and sponsors, optional)', defaults: { showHosts: true, showSponsors: false } },
     hero: { label: 'Hero', icon: '◐', hint: 'Yacht photo, eyebrow, headline, date line', defaults: { image: 'brand:hero-yacht.jpg', eyebrow: 'SPONSORSHIP OPPORTUNITIES', headline: 'AN EVENING ON THE WATER', dateLine: 'DECEMBER 9 2026 • DUBAI MARINA • 7:00 PM – 1:00 AM', alt: 'A private yacht lit up at night in Dubai Marina', link: '' } },
     heading: { label: 'Section heading', icon: 'H', hint: 'Pink label + bold uppercase title', defaults: { eyebrow: 'THE EVENT', title: 'A CURATED NETWORKING EXPERIENCE', align: 'left', underline: false, bg: 'light' } },
     text: { label: 'Text', icon: '¶', hint: 'Greeting and body copy', defaults: { html: '<p>Hi {{first_name}},</p><p>Write your message here.</p>', bg: 'light', align: 'left', pad: 'm' } },
@@ -168,14 +175,15 @@
     tierCard: { label: 'Tier card', icon: '◆', hint: 'Bronze / Silver / Gold / Premium package', defaults: { tier: 'bronze', badge: 'BEST ENTRY POINT', showBenefits: true, maxBenefits: 0, showUpgrades: true } },
     comparison: { label: 'Comparison table', icon: '▦', hint: 'All four tiers side by side', defaults: { title: 'SPONSORSHIP PACKAGES OVERVIEW', highlight: 'bronze', badge: 'BEST ENTRY POINT', caption: '' } },
     callout: { label: 'Why partner (black box)', icon: '▌', hint: 'Black block with pink left border', defaults: { eyebrow: 'WHY PARTNER WITH US', text: 'Curated audience, direct introductions, multi-channel visibility, and a memorable setting people talk about long after the night ends.', items: [] } },
-    cta: { label: 'CTA button', icon: '▭', hint: 'Pink bulletproof button', defaults: { text: 'Reserve My Spot', action: 'reply', replySubject: 'Reserve my spot – {{company}}', url: '', note: '' } },
-    secondaryCta: { label: 'Secondary CTA', icon: '→', hint: '“Meet me on the yacht, let’s talk”', defaults: { text: 'Meet me on the yacht, let’s talk', action: 'whatsapp', waText: 'Hi {{sender_first_name}}, let’s talk about An Evening on the Water.', replySubject: '', url: '' } },
+    cta: { label: 'CTA button', icon: '▭', hint: 'Pink bulletproof button', defaults: { text: 'Reserve My Spot', action: 'reply', replySubject: 'Reserve my spot – {{company}}', url: '', note: '', showPromo: true } },
+    secondaryCta: { label: 'Secondary CTA', icon: '→', hint: '“Meet me on the yacht, let’s talk” + Buy Ticket', defaults: { text: 'Meet me on the yacht, let’s talk', action: 'talk', waText: 'Hi {{sender_first_name}}, let’s talk about An Evening on the Water.', replySubject: '', url: '', ticketButton: false, ticketText: 'Buy Ticket', showPromo: true } },
     image: { label: 'Image', icon: '▣', hint: 'Photo from the deck or your upload', defaults: { src: 'brand:yacht-1.jpg', alt: 'The yacht at night in Dubai Marina', link: '', caption: '', full: true } },
     divider: { label: 'Divider', icon: '〰', hint: 'Line, pink bar or wave art', defaults: { style: 'wave', bg: 'light' } },
     spacer: { label: 'Spacer', icon: '↕', hint: 'Vertical space', defaults: { height: 24, bg: 'light' } },
-    team: { label: 'Meet the Team', icon: '◎', hint: 'Management + sales circles', defaults: { heading: 'MEET THE TEAM AT THE EVENT', showManagement: true, showSales: true, members: null, size: 'small', labels: 'hover', perRow: 5 } },
+    team: { label: 'Meet the Team', icon: '◎', hint: 'Management + sales circles', defaults: { heading: 'MEET THE TEAM AT THE EVENT', showManagement: true, showSales: true, members: null, size: 'small', labels: 'hover', perRow: 5, groupLabels: false } },
     signature: { label: 'Signature', icon: '✎', hint: 'Premium sender signature', defaults: {} },
     footer: { label: 'Footer', icon: '▁', hint: 'Event details + unsubscribe', defaults: { note: 'You’re receiving this because we believe An Evening on the Water is relevant to {{company}}.' } },
+    html: { label: 'Custom HTML', icon: '</>', hint: 'Paste your own HTML (inline styles work best)', defaults: { code: '<p style="margin:0;font-family:Arial,sans-serif;font-size:15px;line-height:24px;color:#1C1C1C;">Paste your HTML here.</p>', bg: 'light', padded: true } },
   };
 
   /* --------------------------------------------------------- render context */
@@ -203,6 +211,20 @@
     const s = r.ctx.settings || {};
     switch (o.action) {
       case 'tickets': return esc((s.event && s.event.ticketLink) || '#');
+      case 'talk': {
+        // A form link (Google Form, Calendly...) if set, otherwise a pre-filled email the lead completes and sends to you.
+        if (s.talkFormUrl) return r.U(s.talkFormUrl);
+        const d = r.data;
+        const name = d ? [d.first_name, d.last_name].filter(Boolean).join(' ') : '{{first_name}} {{last_name}}';
+        const company = d ? d.company : '{{company}}';
+        const subj = `Let’s talk: An Evening on the Water${company ? ` – ${company}` : ''}`;
+        const body = [
+          `Hi ${snd.first || ''},`, '',
+          'I’d like to talk about An Evening on the Water (December 9, Dubai Marina).', '',
+          `Name: ${name}`, `Company: ${company || ''}`, 'Role: ', 'Phone / WhatsApp: ', 'Best time to talk: ', 'What I’d like to discuss: ', '',
+        ].join('\r\n');
+        return esc(`mailto:${snd.email}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`);
+      }
       case 'deck': return esc((s.deck && s.deck.hostedUrl) || `mailto:${snd.email}?subject=${encodeURIComponent('Please send the sponsorship deck')}`);
       case 'whatsapp': {
         // No number on the signature: fall back to a pre-filled reply email.
@@ -264,16 +286,52 @@
 
   const R = {};
 
+  /* Hosts and sponsors come from Settings → Hosts & sponsors. */
+  function brandsOf(r) {
+    const b = (r.ctx.settings || {}).brands || {};
+    const ok = (x) => x && (x.logo || x.name);
+    return { hosts: (b.hosts || []).filter(ok), sponsors: (b.sponsors || []).filter(ok), label: b.sponsorsLabel || 'Sponsored by' };
+  }
+
+  /** A logo fitted into a maxW × maxH box (ratio = width / height), or the name as text if there is no logo. */
+  function brandLogo(r, x, maxW, maxH, o) {
+    o = o || {};
+    if (!x.logo) return `<span style="font-family:${FONT};font-size:${Math.round(maxH * 0.6)}px;line-height:${maxH}px;font-weight:800;color:${o.textColor || C.white};white-space:nowrap;">${esc(x.name)}</span>`;
+    const k = Number(x.ratio) > 0 ? Number(x.ratio) : 3;
+    const w = Math.round(Math.min(maxW, maxH * k));
+    const h = Math.round(w / k);
+    return `<img${o.cls ? ` class="${o.cls}"` : ''} src="${esc(r.asset(x.logo))}" width="${w}" height="${h}" alt="${esc(x.name || '')}" style="display:block;width:${w}px;max-width:100%;height:auto;border:0;${o.center ? 'margin:0 auto;' : ''}">`;
+  }
+
+  /** Host logos in a row with thin dividers, like the poster: mobi hub | events  |  paradigia */
+  function hostsRow(r, hosts, o) {
+    o = o || {};
+    const maxW = o.maxW || 150, maxH = o.maxH || 28, gap = o.gap == null ? 22 : o.gap, line = o.divider || '#3A3A46';
+    const divider = `<td valign="middle" style="padding:0 ${gap}px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="1" height="${maxH + 6}" bgcolor="${line}" style="width:1px;height:${maxH + 6}px;background-color:${line};font-size:0;line-height:0;">&nbsp;</td></tr></table></td>`;
+    const cells = hosts.map((x, i) => `${i ? divider : ''}<td valign="middle">${brandLogo(r, x, maxW, maxH, { cls: o.cls })}</td>`).join('');
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"${o.left ? '' : ' align="center" style="margin:0 auto;"'}><tr>${cells}</tr></table>`;
+  }
+
+  /** "SPONSORED BY" + one white tile per sponsor (the logos keep their own colours on any background). */
+  function sponsorsRow(r, sponsors, label) {
+    if (!sponsors.length) return '';
+    const pct = Math.floor(100 / sponsors.length);
+    const tiles = sponsors.map((x) => `<td class="sp-cell" width="${pct}%" valign="middle" style="width:${pct}%;padding:0 5px;">` +
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr>` +
+      `<td class="sp-tile" align="center" valign="middle" height="64" bgcolor="#FFFFFF" style="height:64px;background-color:#FFFFFF;border-radius:8px;padding:8px 10px;">${brandLogo(r, x, 124, 44, { cls: 'sp-logo', center: true, textColor: C.ink })}</td>` +
+      `</tr></table></td>`).join('');
+    return `<p style="margin:0 0 12px 0;font-family:${FONT};font-size:10px;line-height:14px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#A4A2B6;text-align:center;">${esc(label)}</p>` +
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${tiles}</tr></table>`;
+  }
+
+  const vgap = (h) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="${h}" style="height:${h}px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
+
   R.header = (b, r) => {
-    const logos = [];
-    if (b.showMobihub !== false) logos.push(`<td valign="middle" style="padding:0 0 0 16px;"><img class="logo-m" src="${esc(r.asset('brand:logo-mobihub-white.png'))}" width="104" height="20" alt="mobi hub | events" style="display:block;width:104px;height:auto;border:0;"></td>`);
-    if (b.showSunstrike !== false) logos.push(`<td valign="middle" style="padding:0 0 0 16px;"><img class="logo-s" src="${esc(r.asset('brand:logo-sunstrike.png'))}" width="62" height="32" alt="Sunstrike" style="display:block;width:62px;height:auto;border:0;"></td>`);
-    const left = b.showParadigia !== false ? `<img class="logo-p" src="${esc(r.asset('brand:logo-paradigia-white.png'))}" width="128" height="30" alt="Paradigia" style="display:block;width:128px;height:auto;border:0;">` : '&nbsp;';
-    return sec(b, r, { bg: C.black, pad: '24px 36px', cls: 'px' },
-      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>` +
-      `<td align="left" valign="middle">${left}</td>` +
-      `<td align="right" valign="middle"><table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right"><tr>${logos.join('')}</tr></table></td>` +
-      `</tr></table>`);
+    const { hosts, sponsors, label } = brandsOf(r);
+    const top = b.showHosts !== false && hosts.length ? hostsRow(r, hosts, { cls: 'logo-h' }) : '';
+    const bottom = b.showSponsors && sponsors.length ? sponsorsRow(r, sponsors, label) : '';
+    return sec(b, r, { bg: C.black, pad: top || bottom ? '24px 36px' : '12px 36px', cls: 'px', align: 'center' },
+      (top + (top && bottom ? vgap(20) : '') + bottom) || '&nbsp;');
   };
 
   R.hero = (b, r) => {
@@ -331,7 +389,9 @@
     const list = max > 0 ? all.slice(0, max) : all;
     const more = all.length - list.length;
     const bullets = list.map((x) => `<tr><td width="20" valign="top" style="padding:5px 0 0 0;">${squareBullet(color, 9)}</td><td valign="top" class="dm-ink" style="padding:0 0 9px 0;font-family:${FONT};font-size:12px;line-height:18px;letter-spacing:0.3px;text-transform:uppercase;color:${C.ink};">${esc(x)}</td></tr>`).join('');
-    const badge = b.badge ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${C.pink}"${r.E('badge')} style="background-color:${C.pink};padding:7px 14px;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:3px;color:${C.white};text-transform:uppercase;">${r.T(b.badge)}</td></tr></table>` : '';
+    const auto = String(b.badge || '').toLowerCase() === 'auto';
+    const label = badgeText(b.badge, tk);
+    const badge = label ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${C.pink}"${auto ? '' : r.E('badge')} style="background-color:${C.pink};padding:7px 14px;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:3px;color:${C.white};text-transform:uppercase;">${r.T(label)}</td></tr></table>` : '';
     return badge +
       `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:2px solid ${color};"><tr>` +
       `<td class="stack" width="200" valign="top" bgcolor="${C.black}" style="width:200px;background-color:${C.black};padding:26px 22px 24px 22px;">` +
@@ -366,12 +426,12 @@
   R.comparison = (b, r) => {
     const s = r.ctx.settings || {};
     const rows = s.comparison || [];
-    const hl = b.highlight || 'none';
+    const hl = b.highlight === 'lead' ? tierKey(r.ctx.lead && r.ctx.lead.tierInterest) : (b.highlight || 'none');
     const head = TIER_ORDER.map((k) => {
       const on = k === hl;
       return `<td align="center" bgcolor="${C.black}" style="background-color:${C.black};padding:12px 4px;font-family:${FONT};font-size:11px;line-height:14px;font-weight:800;letter-spacing:1px;color:${TIER_COLORS[k]};${on ? `border-top:3px solid ${C.pink};` : ''}">${esc(((s.tiers || {})[k] || {}).name || k).toUpperCase()}</td>`;
     }).join('');
-    const badgeRow = hl !== 'none' && b.badge ? `<tr><td class="cmp-label">&nbsp;</td>${TIER_ORDER.map((k) => `<td align="center" valign="bottom" style="padding:0 2px 6px 2px;font-family:${FONT};font-size:9px;line-height:12px;font-weight:700;letter-spacing:1.5px;color:${C.pink};text-transform:uppercase;">${k === hl ? r.T(b.badge) : '&nbsp;'}</td>`).join('')}</tr>` : '';
+    const badgeRow = hl !== 'none' && b.badge ? `<tr><td class="cmp-label">&nbsp;</td>${TIER_ORDER.map((k) => `<td align="center" valign="bottom" style="padding:0 2px 6px 2px;font-family:${FONT};font-size:9px;line-height:12px;font-weight:700;letter-spacing:1.5px;color:${C.pink};text-transform:uppercase;">${k === hl ? r.T(badgeText(b.badge, k)) : '&nbsp;'}</td>`).join('')}</tr>` : '';
     const body = rows.map((row, i) => {
       const base = i % 2 ? C.off : '#E6E4E0';
       return `<tr><td class="cmp-label dm-row dm-ink" bgcolor="${base}" style="background-color:${base};padding:10px 8px 10px 10px;font-family:${FONT};font-size:10.5px;line-height:14px;font-weight:700;text-transform:uppercase;color:${C.ink};">${esc(row[0])}</td>` +
@@ -399,21 +459,45 @@
       `</td></tr></table>`);
   };
 
+  /** Ticket discount code box, shown under ticket buttons when a code is set (Settings → Event & tiers). */
+  function promoBox(r) {
+    const code = ((r.ctx.settings || {}).event || {}).promoCode;
+    if (!code) return '';
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:12px auto 0 auto;border-collapse:separate;"><tr>` +
+      `<td class="dm-card" align="center" bgcolor="${C.white}" style="background-color:${C.white};border:2px dashed ${C.pink};border-radius:6px;padding:9px 20px 10px 20px;text-align:center;">` +
+      `<p style="margin:0;font-family:${FONT};font-size:9.5px;line-height:12px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:${C.pink};">Ticket discount code</p>` +
+      `<p class="dm-ink" style="margin:3px 0 1px 0;font-family:${FONT};font-size:21px;line-height:27px;font-weight:800;letter-spacing:1px;color:${C.ink};">${esc(code)}</p>` +
+      `<p class="dm-muted" style="margin:0;font-family:${FONT};font-size:11px;line-height:15px;color:${C.grey};">Enter it at checkout to get your discount</p>` +
+      `</td></tr></table>`;
+  }
+
   R.cta = (b, r) => {
     const href = actionHref(r, b, 'An Evening on the Water');
+    const promo = b.action === 'tickets' && b.showPromo !== false ? promoBox(r) : '';
     const deck = r.ctx.deckMode === 'link' && !r.deckLinkShown && (r.deckLinkShown = true)
       ? `<p style="margin:14px 0 0 0;font-family:${FONT};font-size:12px;line-height:18px;letter-spacing:1px;text-transform:uppercase;"><a href="${actionHref(r, { action: 'deck' })}" target="_blank" style="color:${C.ink};font-weight:700;text-decoration:none;border-bottom:2px solid ${C.pink};" class="dm-ink">View the sponsorship deck &rarr;</a></p>` : '';
     return sec(b, r, { bg: C.off, pad: '14px 40px 26px 40px', cls: 'px dm-off', align: 'center' },
       button(href, r.data ? merge(b.text, r.data, 'text') : b.text, { width: 280, editField: r.editable ? 'text' : '' }) +
-      (b.note ? `<p${r.E('note')} class="dm-muted" style="margin:12px 0 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${C.grey};">${r.T(b.note)}</p>` : '') + deck);
+      (b.note ? `<p${r.E('note')} class="dm-muted" style="margin:12px 0 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${C.grey};">${r.T(b.note)}</p>` : '') + promo + deck);
   };
 
   R.secondaryCta = (b, r) => {
     const href = actionHref(r, b, 'Let’s meet on the yacht');
-    return sec(b, r, { bg: C.off, pad: '0 40px 30px 40px', cls: 'px dm-off', align: 'center' },
-      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td class="dm-border" style="border:2px solid ${C.ink};padding:13px 24px;">` +
-      `<a href="${href}" target="_blank" class="dm-ink" style="font-family:${FONT};font-size:12px;line-height:16px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${C.ink};text-decoration:none;"><span${r.E('text')}>${r.T(b.text)}</span> &rarr;</a>` +
-      `</td></tr></table>`);
+    const two = !!b.ticketButton;
+    const fs = two ? 11 : 12;
+    const ls = two ? 1.5 : 2;
+    const talk = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td class="dm-border" style="border:2px solid ${C.ink};padding:13px ${two ? 20 : 24}px;">` +
+      `<a href="${href}" target="_blank" class="dm-ink" style="font-family:${FONT};font-size:${fs}px;line-height:16px;font-weight:700;letter-spacing:${ls}px;text-transform:uppercase;color:${C.ink};text-decoration:none;"><span${r.E('text')}>${r.T(b.text)}</span> &rarr;</a>` +
+      `</td></tr></table>`;
+    if (!two) return sec(b, r, { bg: C.off, pad: '0 40px 30px 40px', cls: 'px dm-off', align: 'center' }, talk);
+    const ticket = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td class="dm-border" bgcolor="${C.black}" style="background-color:${C.black};border:2px solid ${C.black};padding:13px 22px;">` +
+      `<a href="${actionHref(r, { action: 'tickets' })}" target="_blank" style="font-family:${FONT};font-size:${fs}px;line-height:16px;font-weight:700;letter-spacing:${ls}px;text-transform:uppercase;color:${C.white};text-decoration:none;"><span${r.E('ticketText')}>${r.T(b.ticketText || 'Buy Ticket')}</span></a>` +
+      `</td></tr></table>`;
+    return sec(b, r, { bg: C.off, pad: '0 34px 22px 34px', cls: 'px dm-off', align: 'center' },
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>` +
+      `<td class="stack" align="center" valign="middle" style="padding:0 5px 10px 5px;">${ticket}</td>` +
+      `<td class="stack" align="center" valign="middle" style="padding:0 5px 10px 5px;">${talk}</td>` +
+      `</tr></table>` + (b.showPromo !== false ? promoBox(r) : ''));
   };
 
   R.image = (b, r) => {
@@ -489,8 +573,11 @@
         (via ? `<p class="tt-link" style="margin:5px 0 0 0;font-family:${FONT};font-size:9px;line-height:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${C.pink};text-align:center;">${via} &rarr;</p>` : '') +
         `</div></td>`;
     };
-    const rows = groups.filter(([, list]) => list.length).map(([label, list]) =>
-      `<p class="dm-muted" style="margin:${small ? 20 : 24}px 0 ${small ? 12 : 14}px 0;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:4px;color:${C.grey};text-align:center;">${label}</p>` +
+    // Group labels (MANAGEMENT / SALES TEAM) are optional; without them the groups are just separate rows.
+    const rows = groups.filter(([, list]) => list.length).map(([label, list], gi) =>
+      (b.groupLabels
+        ? `<p class="dm-muted" style="margin:${small ? 20 : 24}px 0 ${small ? 12 : 14}px 0;font-family:${FONT};font-size:10px;line-height:12px;font-weight:700;letter-spacing:4px;color:${C.grey};text-align:center;">${label}</p>`
+        : `<div style="height:${gi ? 10 : 22}px;line-height:${gi ? 10 : 22}px;font-size:0;">&nbsp;</div>`) +
       balancedRows(list, perRow).map((row) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>${row.map(cell).join('')}</tr></table>`).join('')
     ).join('');
     return sec(b, r, { bg: C.off, pad: '34px 30px 18px 30px', cls: 'px dm-off', align: 'center' },
@@ -516,11 +603,7 @@
       sigLine(r, 'brand:icon-email.png', esc('mailto:' + snd.email), snd.email) +
       sigLine(r, 'brand:icon-web.png', esc(sig.website || ''), (sig.website || '').replace(/^https?:\/\//, '').replace(/\/$/, '')) +
       sigLine(r, 'brand:icon-ticket.png', esc(ticket), ticket ? (sig.ticketLabel || 'Get your event ticket') : '');
-    const logos = `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>` +
-      `<td valign="middle" style="padding:0 18px 0 0;"><img src="${esc(r.asset('brand:logo-paradigia-white.png'))}" width="96" height="22" alt="Paradigia" style="display:block;width:96px;height:auto;border:0;"></td>` +
-      `<td valign="middle" style="padding:0 18px 0 0;border-left:1px solid #2E2E38;padding-left:18px;"><img src="${esc(r.asset('brand:logo-mobihub-white.png'))}" width="86" height="16" alt="mobi hub | events" style="display:block;width:86px;height:auto;border:0;"></td>` +
-      `<td valign="middle" style="border-left:1px solid #2E2E38;padding-left:18px;"><img src="${esc(r.asset('brand:logo-sunstrike.png'))}" width="50" height="26" alt="Sunstrike" style="display:block;width:50px;height:auto;border:0;"></td>` +
-      `</tr></table>`;
+    const logos = hostsRow(r, brandsOf(r).hosts, { maxW: 110, maxH: 21, gap: 16, divider: '#2E2E38', left: true });
     return sec(b, r, { bg: C.black, pad: '36px 40px 30px 40px', cls: 'px' },
       `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>` +
       `<td class="sig-photo" width="96" valign="top" style="width:96px;padding:2px 0 0 0;">${circle(r, { photo: sig.photo, name: snd.name, size: 72 })}</td>` +
@@ -537,13 +620,30 @@
       (sig.confidentiality ? `<p style="margin:18px 0 0 0;font-family:${FONT};font-size:10px;line-height:15px;color:#6B6A78;">${esc(sig.confidentiality)}</p>` : ''));
   };
 
+  /** Remove scripts and inline event handlers from pasted HTML (email clients strip them anyway). */
+  const cleanHtml = (code) => String(code || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<(iframe|object|embed|form)[\s\S]*?(<\/\1>|\/?>)/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"');
+
+  R.html = (b, r) => {
+    const padded = b.padded !== false;
+    const code = cleanHtml(b.code);
+    return sec(b, r, { bg: bgOf(b.bg), pad: padded ? '18px 40px' : '0', cls: (padded ? 'px' : '') + dmClass(b.bg) }, r.data ? merge(code, r.data, 'html') : code);
+  };
+
   R.footer = (b, r) => {
     const s = r.ctx.settings || {};
     const ev = s.event || {};
     const snd = senderFrom(r.ctx);
     const u = s.unsubscribe || {};
     const unsub = u.mode === 'url' && u.url ? esc(u.url) : esc(`mailto:${snd.email}?subject=${encodeURIComponent('Unsubscribe')}&body=${encodeURIComponent('Please remove me from future emails about this event.')}`);
-    return sec(b, r, { bg: C.night, pad: '28px 40px 34px 40px', cls: 'px', align: 'center' },
+    const { sponsors, label } = brandsOf(r);
+    const spons = b.showSponsors !== false && sponsors.length
+      ? sponsorsRow(r, sponsors, label) + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 22px 0;"><tr><td height="1" bgcolor="#262630" style="height:1px;background-color:#262630;font-size:0;line-height:0;">&nbsp;</td></tr></table>`
+      : '';
+    return sec(b, r, { bg: C.night, pad: spons ? '30px 34px 34px 34px' : '28px 40px 34px 40px', cls: 'px', align: 'center' }, spons +
       `<p style="margin:0 0 8px 0;font-family:${FONT};font-size:10px;line-height:14px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#A4A2B6;text-align:center;">${esc(ev.name || 'An Evening on the Water')}</p>` +
       `<p style="margin:0 0 14px 0;font-family:${FONT};font-size:11px;line-height:18px;color:#8C8A9C;text-align:center;">${esc(ev.footerLine1 || 'December 9, 2026 · Gathering from 7:00 PM · Event 9:00 PM – 1:00 AM')}<br>${esc(ev.footerLine2 || 'Aboard a private yacht, Dubai Marina · 400-guest capacity')}</p>` +
       `<p style="margin:0;font-family:${FONT};font-size:10.5px;line-height:17px;color:#6B6A78;text-align:center;"><span${r.E('note')}>${r.T(b.note || '')}</span> <a href="${unsub}" target="_blank" style="color:#A4A2B6;text-decoration:underline;">${esc(u.text || 'Unsubscribe')}</a></p>`);
@@ -563,7 +663,7 @@
 
   function docShell(inner, o) {
     const pre = o.preheader ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:${C.night};">${esc(o.preheader)}${'&#8199;&#847; '.repeat(70)}</div>` : '';
-    const ogsc = DM_RULES.replace(/\.dm-/g, '[data-ogsc] .dm-').replace(/\[data-ogsc\] \.dm-(off|card|row|body|outer)/g, '[data-ogsb] .dm-$1');
+    const ogsc = DM_RULES.replace(/\.dm-/g, '[data-ogsc] .dm-').replace(/\.tm \.tt/g, '[data-ogsc] .tm .tt').replace(/\[data-ogsc\] \.dm-(off|card|row|body|outer)/g, '[data-ogsb] .dm-$1');
     return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
 <head>
@@ -591,9 +691,10 @@
     .stack{display:block!important;width:100%!important;max-width:100%!important;box-sizing:border-box;}
     .fluid{width:100%!important;height:auto!important;}
     .h1{font-size:28px!important;line-height:34px!important;}
-    .logo-p{width:104px!important;}
-    .logo-m{width:84px!important;}
-    .logo-s{width:48px!important;}
+    .logo-h{width:auto!important;height:23px!important;}
+    .sp-cell{padding:0 3px!important;}
+    .sp-tile{height:50px!important;padding:6px!important;}
+    .sp-logo{width:auto!important;max-width:100%!important;max-height:34px!important;height:auto!important;}
     .team-cell{width:110px!important;}
     .team-cell-s{width:62px!important;padding-left:2px!important;padding-right:2px!important;}
     .tm .tt{display:block!important;position:static!important;background-color:transparent!important;border:0!important;box-shadow:none!important;padding:5px 0 0 0!important;}
@@ -625,13 +726,60 @@ ${inner}
 </html>`;
   }
 
+  /* ------------------------------------------------- custom HTML emails */
+  // An email can carry `rawHtml` (edited in the editor's HTML tab). It is sent as written:
+  // merge fields are filled, /brand and /uploads images are embedded, scripts are removed.
+
+  /** Undo URL-encoding of {{tokens}} so they can be merged later. */
+  const untoken = (html) => String(html || '').replace(/%7B%7B\s*([a-z_]+)\s*%7D%7D/gi, '{{$1}}');
+
+  /** Fill merge fields in raw HTML: URL-encoded inside href links, HTML-escaped elsewhere. */
+  function mergeRaw(html, data) {
+    const withLinks = String(html).replace(/(href\s*=\s*)(["'])([\s\S]*?)\2/gi, (m, a, q, v) => `${a}${q}${esc(merge(v.replace(/&amp;/g, '&'), data, 'url'))}${q}`);
+    return merge(withLinks, data, 'html');
+  }
+
+  /** Point /brand and /uploads image paths at the right place (CID when sending, data URI on export). */
+  function rewriteAssets(html, r) {
+    return String(html).replace(/((?:src|background)\s*=\s*)(["'])\/(brand|uploads)\/([^"']+)\2/gi,
+      (m, a, q, kind, file) => `${a}${q}${esc(r.asset(`${kind === 'brand' ? 'brand' : 'upload'}:${file}`))}${q}`);
+  }
+
+  /** Line breaks between structural tags so generated HTML is readable (rendering is unchanged). */
+  const pretty = (html) => String(html).replace(/>\s*<(tr|td|table|\/table|\/tr|p|h1|h2|h3|div|!--\[if)\b/gi, '>\n<$1');
+
+  /** Complete HTML of an email with merge fields kept as {{tokens}}: the starting point for HTML editing. */
+  function htmlSource(doc, ctx) {
+    if (doc.rawHtml) return doc.rawHtml;
+    return pretty(untoken(renderEmail({ ...doc, rawHtml: '' }, { ...ctx, editable: false, resolve: false, forceDark: false, extraCss: '' }).html));
+  }
+
+  /** One block as standalone HTML (a full-width table), for "Edit as HTML". */
+  function renderBlock(block, ctx) {
+    const r = makeR({ ...ctx, editable: false, resolve: false });
+    const row = R[block.type] ? R[block.type]({ ...BLOCKS[block.type].defaults, ...block }, r) : '';
+    return untoken(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${row}</table>`);
+  }
+
   /**
    * Render a full email.
-   * doc: { subject, preheader, blocks }
+   * doc: { subject, preheader, blocks, rawHtml? }
    * ctx: { settings, team, signature, account, lead, deckMode, asset(ref), editable, resolve, forceDark, extraCss }
    */
   function renderEmail(doc, ctx) {
     const r = makeR(ctx);
+    if (doc && doc.rawHtml) {
+      let html = rewriteAssets(cleanHtml(doc.rawHtml), r);
+      if (r.data) html = mergeRaw(html, r.data);
+      const extra = `${ctx.forceDark ? DM_RULES : ''}${ctx.extraCss || ''}`;
+      if (extra) html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `<style>${extra}</style></head>`) : `<style>${extra}</style>${html}`;
+      return {
+        html,
+        subject: r.data ? merge(doc.subject || '', r.data, 'text') : (doc.subject || ''),
+        preheader: r.data ? merge(doc.preheader || '', r.data, 'text') : (doc.preheader || ''),
+        assets: Array.from(r.used),
+      };
+    }
     const blocks = (doc && doc.blocks) || [];
     // In "link" mode the first CTA gets a "View the sponsorship deck" line; the signature always carries one too.
     const inner = blocks.map((b) => (R[b.type] ? R[b.type]({ ...BLOCKS[b.type].defaults, ...b }, r) : '')).join('\n');
@@ -645,6 +793,11 @@ ${inner}
   function renderText(doc, ctx) {
     const r = makeR({ ...ctx, editable: false });
     const d = r.data;
+    if (doc.rawHtml) {
+      let h = String(doc.rawHtml).replace(/<head[\s\S]*?<\/head>/i, '').replace(/<div[^>]*display:\s*none[\s\S]*?<\/div>/i, '');
+      if (d) h = mergeRaw(h, d);
+      return htmlToText(h);
+    }
     const M = (s) => (d ? merge(s || '', d, 'text') : (s || ''));
     const s = ctx.settings || {};
     const snd = senderFrom(ctx);
@@ -665,8 +818,11 @@ ${inner}
         case 'comparison': out.push(TIER_ORDER.map((k) => { const t = (s.tiers || {})[k] || {}; return `${t.name}: ${money(t.price)} · ${t.passes} passes`; }).join('\n')); break;
         case 'callout': out.push(`${M(b.eyebrow)}\n${M(b.text)}`); break;
         case 'cta': case 'secondaryCta': {
+          const code = (s.event || {}).promoCode;
+          if (b.type === 'secondaryCta' && b.ticketButton) out.push(`${M(b.ticketText || 'Buy Ticket')}: ${actionHref(r, { action: 'tickets' }).replace(/&amp;/g, '&')}${code && b.showPromo !== false ? `\nTicket discount code: ${code} (enter it at checkout)` : ''}`);
+          if (b.type === 'cta' && b.action === 'tickets' && code && b.showPromo !== false) out.push(`Ticket discount code: ${code} (enter it at checkout)`);
           const href = actionHref(r, b, '').replace(/&amp;/g, '&');
-          out.push(`${M(b.text)}: ${href}`);
+          out.push(`${M(b.text)}: ${b.action === 'talk' && !/^https?:/.test(href) ? `reply to ${senderFrom(ctx).email}` : href}`);
           break;
         }
         case 'team': out.push('MEET THE TEAM\n' + (ctx.team || []).filter((m) => m.show !== false).map((m) => `${m.name}, ${m.role}`).join('\n')); break;
@@ -675,7 +831,13 @@ ${inner}
           out.push(['--', snd.name, snd.title, snd.phone, snd.email, sig.website, sig.ticketLink || (s.event && s.event.ticketLink)].filter(Boolean).join('\n'));
           break;
         }
-        case 'footer': out.push(`${M(b.note)}\nUnsubscribe: reply with "unsubscribe".`); break;
+        case 'footer': {
+          const br = s.brands || {};
+          const sp = b.showSponsors !== false ? (br.sponsors || []).map((x) => x.name).filter(Boolean) : [];
+          out.push(`${sp.length ? `${br.sponsorsLabel || 'Sponsored by'}: ${sp.join(', ')}\n\n` : ''}${M(b.note)}\nUnsubscribe: reply with "unsubscribe".`);
+          break;
+        }
+        case 'html': out.push(htmlToText(M(b.code))); break;
         default: break;
       }
     }
@@ -684,6 +846,7 @@ ${inner}
 
   /** Words in the personal body copy (text blocks only), as per the copy guidelines. */
   function bodyWords(doc) {
+    if (doc.rawHtml) return 0;
     return (doc.blocks || []).filter((b) => b.type === 'text').reduce((n, b) => n + wordCount(htmlToText(b.html || '')), 0);
   }
 
@@ -701,7 +864,10 @@ ${inner}
     if (blocks.some((b) => b.type === 'team') && noRole.length) out.push({ level: 'info', msg: `No role yet for ${noRole.join(', ')} (Team tab).` });
     const sigEmail = String((ctx.signature || {}).email || '').toLowerCase();
     if (ctx.account && ctx.account.email && blocks.some((b) => b.type === 'signature') && sigEmail && sigEmail !== ctx.account.email.toLowerCase()) out.push({ level: 'warn', msg: `The signature shows ${sigEmail} but you are sending from ${ctx.account.email}. Pick or create a matching signature (Signatures tab).` });
-    if (!blocks.some((b) => b.type === 'footer')) out.push({ level: 'warn', msg: 'No footer block, so there is no unsubscribe link.' });
+    if (doc.rawHtml) {
+      if (!/unsubscribe/i.test(doc.rawHtml)) out.push({ level: 'warn', msg: 'This custom HTML has no unsubscribe link.' });
+      out.push({ level: 'info', msg: 'Custom HTML email: team, signature and settings changes don’t update it automatically.' });
+    } else if (!blocks.some((b) => b.type === 'footer')) out.push({ level: 'warn', msg: 'No footer block, so there is no unsubscribe link.' });
     const words = bodyWords(doc);
     if (words > 130) out.push({ level: 'warn', msg: `Body copy is ${words} words (guideline: under 130).` });
     if (blocks.some((b) => b.type === 'signature') && (!s.deck || !s.deck.hostedUrl)) out.push({ level: 'info', msg: '“Download Sponsorship Deck” falls back to a reply-by-email link until you add a hosted deck URL in Settings.' });
@@ -715,5 +881,6 @@ ${inner}
   return {
     C, TIER_COLORS, TIER_ORDER, STATUSES, MERGE_FIELDS, BLOCKS, FONT,
     esc, merge, mergeData, htmlToText, wordCount, bodyWords, renderEmail, renderText, preflight, shortText, tierKey, money,
+    htmlSource, renderBlock, untoken, leadTier,
   };
 });

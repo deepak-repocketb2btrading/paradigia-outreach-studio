@@ -3,6 +3,7 @@ import * as dashboard from './views/dashboard.js';
 import * as leads from './views/leads.js';
 import * as sequences from './views/sequences.js';
 import * as editor from './views/editor.js';
+import * as templates from './views/templates.js';
 import * as inbox from './views/inbox.js';
 import * as outbox from './views/outbox.js';
 import * as team from './views/team.js';
@@ -13,6 +14,7 @@ const NAV = [
   { key: 'dashboard', label: 'Overview', icon: 'home', view: dashboard },
   { key: 'leads', label: 'Leads', icon: 'users', view: leads },
   { key: 'sequences', label: 'Sequences', icon: 'layers', view: sequences },
+  { key: 'templates', label: 'Templates', icon: 'grid', view: templates },
   { key: 'inbox', label: 'Inbox', icon: 'inbox', view: inbox },
   { key: 'outbox', label: 'Outbox', icon: 'send', view: outbox },
   '-',
@@ -20,7 +22,7 @@ const NAV = [
   { key: 'signatures', label: 'Signatures', icon: 'pen', view: signatures },
   { key: 'settings', label: 'Settings', icon: 'settings', view: settings },
 ];
-const VIEWS = { dashboard, leads, sequences, editor, inbox, outbox, team, signatures, settings };
+const VIEWS = { dashboard, leads, sequences, templates, editor, inbox, outbox, team, signatures, settings };
 
 let current = null;
 let pendingRefresh = false;
@@ -33,12 +35,13 @@ function parseHash() {
 }
 
 function renderNav() {
-  const { name } = parseHash();
+  const { name, params } = parseHash();
   const d = D();
+  const editorOf = name === 'editor' ? (params[0] === 'template' ? 'templates' : 'sequences') : '';
   const unread = d ? d.leads.filter((l) => l.unread).length : 0;
   const queued = d ? d.queue.filter((q) => q.state === 'queued').length : 0;
   $('#nav').innerHTML = NAV.map((n) => n === '-' ? '<div class="nav-sep"></div>' :
-    `<a href="#/${n.key}" class="${name === n.key || (name === 'editor' && n.key === 'sequences') ? 'active' : ''}">${icon(n.icon)}<span>${n.label}</span>${n.key === 'inbox' && unread ? `<span class="count">${unread}</span>` : ''}${n.key === 'outbox' && queued ? `<span class="count" style="background:#2A2A36">${queued}</span>` : ''}</a>`).join('');
+    `<a href="#/${n.key}" class="${name === n.key || (editorOf === n.key) ? 'active' : ''}">${icon(n.icon)}<span>${n.label}</span>${n.key === 'inbox' && unread ? `<span class="count">${unread}</span>` : ''}${n.key === 'outbox' && queued ? `<span class="count" style="background:#2A2A36">${queued}</span>` : ''}</a>`).join('');
   const accts = d ? d.accounts : [];
   const conn = d ? d.google.connected : [];
   $('#side-foot').innerHTML = (accts.length ? accts.map((a) => {

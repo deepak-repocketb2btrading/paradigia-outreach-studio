@@ -56,6 +56,7 @@ const P = {
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
   tag: '<path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M7 7h.01"/>',
   more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
 };
 export const icon = (n, cls) => `<svg class="${cls || ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[n] || ''}</svg>`;
 
@@ -105,7 +106,8 @@ export function ago(iso) {
 export const plural = (n, w, pl) => `${n} ${n === 1 ? w : (pl || w + 's')}`;
 export const statusOf = (k) => R.STATUSES.find((s) => s.key === k) || R.STATUSES[0];
 export const statusBadge = (k) => { const s = statusOf(k); return `<span class="badge" style="background:${s.color}22;color:${s.color}"><span class="dot" style="background:${s.color}"></span>${esc(s.label)}</span>`; };
-export const tierChip = (t) => t ? `<span class="tier ${esc(R.tierKey(t))}">${esc(t)}</span>` : '<span class="faint">—</span>';
+/** Show a tier only when the field actually names one (Bronze, Silver, Gold or Premium). */
+export const tierChip = (t) => { const k = R.leadTier(t); return k ? `<span class="tier ${k}">${esc(k[0].toUpperCase() + k.slice(1))}</span>` : '<span class="faint">—</span>'; };
 
 /* ------------------------------------------------------------------- api */
 export async function api(method, url, body, opts = {}) {
@@ -313,6 +315,27 @@ export function toCSV(rows) {
 
 /* --------------------------------------------------------- domain helpers */
 export const seqById = (id) => (D().sequences || []).find((s) => s.id === id);
+
+/* ------------------------------------------------------------ templates */
+let builtIns = null;
+/** Your saved templates first, then the built-in layouts and sequence emails. */
+export function allTemplates() {
+  if (!builtIns) builtIns = Seed.templates();
+  const mine = (D().templates || []).map((t) => ({ ...t, builtIn: false, category: 'My templates' }));
+  return [...mine, ...builtIns];
+}
+export const templateById = (id) => allTemplates().find((t) => t.id === id);
+/** A fresh copy of a template's email, ready to drop into a sequence. */
+export function stepFromTemplate(tpl, extra = {}) {
+  const st = clone(tpl.step);
+  return {
+    ...st, id: uid('s'), name: extra.name || tpl.name, blocks: (st.blocks || []).map((b) => ({ ...b, id: uid('b') })),
+    delayDays: extra.delayDays != null ? Number(extra.delayDays) : (st.delayDays || 0),
+    fixedDate: extra.fixedDate != null ? extra.fixedDate : (st.fixedDate || ''),
+    threadReply: extra.threadReply != null ? extra.threadReply : !!st.threadReply,
+    subjectIndex: st.subjectIndex || 0, abTest: !!st.abTest, deck: st.deck || 'inherit',
+  };
+}
 export const leadById = (id) => (D().leads || []).find((l) => l.id === id);
 export const connectedAccounts = () => (D().accounts || []).filter((a) => (D().google.connected || []).includes(a.email));
 

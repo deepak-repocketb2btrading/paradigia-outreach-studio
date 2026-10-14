@@ -29,7 +29,7 @@ export function refresh() {
     { done: conn, t: 'Connect your Gmail account', go: '#/settings' },
     { done: placeholders === 0, t: placeholders ? `Replace ${placeholders} placeholder team member${placeholders > 1 ? 's' : ''}` : 'Team members set up', go: '#/team' },
     { done: leads.length > 0, t: 'Import your leads from CSV', go: '#/leads?import=1' },
-    { done: testDone, t: 'Send yourself a test email', go: '#/sequences/seq-bronze' },
+    { done: testDone, t: 'Send yourself a test email', go: `#/sequences/${(d.sequences[0] || {}).id || ''}` },
   ];
   const setupLeft = steps.filter((s) => !s.done).length;
 

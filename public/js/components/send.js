@@ -67,7 +67,7 @@ export function openSendDialog(leadIds, preset = {}) {
     const ctx = previewCtx(firstLead, { signatureId: st.signatureId, deckMode: st.deck, account: d.accounts.find((a) => a.email === st.account) || d.accounts[0] });
     const data = R.mergeData(firstLead, ctx);
     const inThread = leadIds.filter((id) => { const e = d.enrollments.find((x) => x.leadId === id && x.sequenceId === seq.id); return e && e.threadId && e.firstSubject; }).length;
-    const warnings = R.preflight({ subject: step.subjects[0], preheader: step.preheader, blocks: step.blocks }, ctx);
+    const warnings = R.preflight({ subject: step.subjects[0], preheader: step.preheader, blocks: step.blocks, rawHtml: step.rawHtml }, ctx);
     const noAcct = !connectedAccounts().length;
     body.innerHTML = `
       ${noAcct ? `<div class="notice err" style="margin-bottom:14px">${icon('alert')}<div>No Gmail account is connected yet. <a href="#/settings">Connect Gmail in Settings</a> first.</div></div>` : ''}
@@ -105,7 +105,7 @@ export function openSendDialog(leadIds, preset = {}) {
     $('[data-go]', m.el).textContent = st.when === 'now' ? `Send ${eligible.length} now` : `Queue ${eligible.length} email${eligible.length === 1 ? '' : 's'}`;
 
     if (st.preview) {
-      const doc = { subject: step.subjects[st.variant === '' ? (step.subjectIndex || 0) : Number(st.variant)], preheader: step.preheader, blocks: step.blocks };
+      const doc = { subject: step.subjects[st.variant === '' ? (step.subjectIndex || 0) : Number(st.variant)], preheader: step.preheader, blocks: step.blocks, rawHtml: step.rawHtml };
       fillFrame($('[data-frame]', body), R.renderEmail(doc, ctx).html, { autoHeight: false });
     }
   }

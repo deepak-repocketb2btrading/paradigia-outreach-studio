@@ -1,6 +1,9 @@
-import { D, R, Seed, $, $$, esc, icon, api, modal, ok, fail, loadState, seqById, stepStats, stepStatus, timingLabel, dayNumbers, clone, uid, confirmBox, prompt1, copyText, menu, connectedAccounts, plural } from '../core.js';
+import { D, R, Seed, $, $$, esc, icon, api, modal, ok, fail, loadState, seqById, stepStats, stepStatus, timingLabel, dayNumbers, clone, uid, confirmBox, prompt1, copyText, menu, connectedAccounts, plural, stepFromTemplate } from '../core.js';
 import { openEnrollDialog, openSendDialog } from '../components/send.js';
 import { openExport, sendTest } from './editor.js';
+import { openTemplatePicker, openSequenceBuilder, saveAsTemplate } from '../components/templates.js';
+import { downloadMenu, sequenceMenu } from '../components/approval.js';
+import { openReviewDialog } from '../components/review.js';
 
 let wrap;
 let seqId = null;
@@ -30,7 +33,7 @@ function draw() {
 function list() {
   const d = D();
   return `<div class="page-head"><div><div class="eyebrow">Template library</div><h1>Sequences</h1></div>
-    <div class="actions"><button class="btn primary" data-new>${icon('plus')} New sequence</button></div></div>
+    <div class="actions"><button class="btn" data-review title="Send the emails to marketing to edit and approve, or import their review">${icon('pen')} Marketing review</button><a class="btn" href="#/templates">${icon('grid')} Templates</a><button class="btn primary" data-new>${icon('plus')} New sequence from templates</button></div></div>
     <div class="grid g2">${d.sequences.map((s) => {
       const enr = d.enrollments.filter((e) => e.sequenceId === s.id);
       const sent = s.steps.reduce((n, st) => n + stepStats(s, st).sent, 0);
@@ -58,6 +61,8 @@ function detail(seq) {
         <div class="row wrap" style="gap:8px"><input class="input sm" data-meta="audience" value="${esc(seq.audience || '')}" placeholder="Audience" style="width:200px"><input class="input sm grow" data-meta="description" value="${esc(seq.description || '')}" placeholder="Description"></div>
       </div>
       <div class="actions">
+        <button class="btn" data-review title="Send these emails to marketing to edit and approve, or import their review">${icon('pen')} Marketing review</button>
+        <button class="btn" data-dlseq title="Every email with subject lines and timing: open in the browser or download">${icon('ext')} Approval sheet</button>
         <button class="btn" data-enroll>${icon('layers')} Enroll leads</button>
         <a class="btn" href="#/leads">${icon('users')} Leads</a>
       </div></div>
@@ -70,7 +75,7 @@ function detail(seq) {
     </div>
 
     <div data-steps>${seq.steps.map((st, i) => stepCard(seq, st, i)).join('')}</div>
-    <div class="row" style="margin-top:6px"><button class="btn" data-add-step>${icon('plus')} Add email</button><span class="small faint">Drag the handle to reorder. Delays count from the previous email.</span></div>`;
+    <div class="row" style="margin-top:6px"><button class="btn" data-add-step>${icon('plus')} Add email from template</button><a class="btn ghost" href="#/templates">${icon('grid')} Browse templates</a><span class="small faint">Drag the handle to reorder. Delays count from the previous email.</span></div>`;
 }
 
 function stepCard(seq, st, i) {
@@ -83,7 +88,7 @@ function stepCard(seq, st, i) {
     <span class="num">${i + 1}</span>
     <div style="min-width:0">
       <div class="row wrap"><h4>${esc(st.name)}</h4><span class="badge" style="background:${status.color}22;color:${status.color}">${status.label}</span>${stats.queued && status.key !== 'scheduled' ? `<span class="badge outline">${stats.queued} scheduled</span>` : ''}
-        <span class="timing">${icon('clock')}<b>${esc(timingLabel(st, i))}</b></span>${st.threadReply && i ? '<span class="badge outline">same thread</span>' : ''}<span class="badge outline">${icon('file')} ${esc(deck)}</span>${st.abTest ? '<span class="badge" style="background:#3B1FA833;color:#B7A8FF">A/B test</span>' : ''}</div>
+        <span class="timing">${icon('clock')}<b>${esc(timingLabel(st, i))}</b></span>${st.threadReply && i ? '<span class="badge outline">same thread</span>' : ''}<span class="badge outline">${icon('file')} ${esc(deck)}</span>${st.abTest ? '<span class="badge" style="background:#3B1FA833;color:#B7A8FF">A/B test</span>' : ''}${reviewBadge(st)}</div>
       <div class="subj-list">${(st.subjects || []).map((s, k) => s ? `<div class="subj ${(!st.abTest && k === (st.subjectIndex || 0)) || (st.abTest) ? 'on' : ''}"><span class="k">${'ABC'[k]}</span><span>${esc(s)}</span>${stats.variants[k] && stats.variants[k].sent ? `<span class="tiny faint">${stats.variants[k].sent} sent · ${stats.variants[k].replied} replied</span>` : ''}</div>` : '').join('')}</div>
       <div class="small faint" style="margin-top:6px">Preheader: ${esc(st.preheader || '—')} · ${R.bodyWords(st)} words</div>
     </div>
@@ -97,6 +102,15 @@ function stepCard(seq, st, i) {
       </div>
     </div>
   </div>`;
+}
+
+/** Marketing's verdict on an email, from an imported review. */
+function reviewBadge(st) {
+  const r = st.review;
+  if (!r || (r.status !== 'approved' && r.status !== 'changes')) return '';
+  const [label, color] = r.status === 'approved' ? ['✓ Approved', '#22C55E'] : r.resolvedAt ? ['✓ Changes made', '#8C7CFF'] : ['Changes requested', '#F59E0B'];
+  const tip = `${r.status === 'approved' ? 'Approved' : 'Changes requested'} by ${r.by || 'marketing'}${r.at ? ' on ' + new Date(r.at).toLocaleDateString() : ''}${r.comment ? ': “' + r.comment + '”' : ''}${r.resolvedAt ? `. Changes made on ${new Date(r.resolvedAt).toLocaleDateString()}${r.resolvedNote ? ': ' + r.resolvedNote : ''}` : ''}`;
+  return `<span class="badge" style="background:${color}22;color:${color}" title="${esc(tip)}">${label}${r.by ? ` · ${esc(r.by)}` : ''}</span>`;
 }
 
 /* ---------------------------------------------------------------- events */
@@ -115,11 +129,7 @@ async function onClick(e) {
   const d = D();
   if (b.matches('[data-open]') && !e.target.closest('button')) { location.hash = `#/sequences/${b.dataset.open}`; return; }
   if (b.matches('[data-new]')) {
-    const name = await prompt1('Sequence name', '', { title: 'New sequence', okText: 'Create' });
-    if (!name) return;
-    const base = Seed.sequences()[0].steps[0];
-    const seq = { name, audience: '', description: '', color: '#FF0055', deckChoice: 'off', steps: [{ ...clone(base), id: uid('s'), name: 'Day 0 · Intro', subjects: ['', '', ''], blocks: base.blocks.map((x) => ({ ...clone(x), id: uid('b') })) }] };
-    try { const r = await api('POST', '/api/sequences', seq); await loadState(); location.hash = `#/sequences/${r.id}`; } catch (err) { fail(err); }
+    openSequenceBuilder();
   } else if (b.matches('[data-dup]')) {
     const src = clone(seqById(b.dataset.dup));
     delete src.id;
@@ -132,6 +142,10 @@ async function onClick(e) {
     if (await confirmBox(`Delete <b>${esc(s.name)}</b>?${n ? ` ${plural(n, 'lead')} are in it; their scheduled emails will be cancelled.` : ''}`, { okText: 'Delete', danger: true })) {
       try { await api('DELETE', `/api/sequences/${s.id}`); await loadState(); ok('Sequence deleted'); } catch (err) { fail(err); }
     }
+  } else if (b.matches('[data-review]')) {
+    openReviewDialog(seqId ? [seqId] : null);
+  } else if (b.matches('[data-dlseq]')) {
+    sequenceMenu(b, seqById(seqId));
   } else if (b.matches('[data-enroll]')) {
     pickLeads(seqId);
   } else if (b.closest('[data-deckchoice]')) {
@@ -139,15 +153,12 @@ async function onClick(e) {
     seq.deckChoice = b.dataset.v;
     save(seq, `Deck default: ${b.textContent}`);
   } else if (b.matches('[data-add-step]')) {
-    const seq = clone(seqById(seqId));
-    const last = seq.steps[seq.steps.length - 1];
-    const fresh = last ? clone(last) : clone(Seed.sequences()[0].steps[1]);
-    fresh.id = uid('s');
-    fresh.name = `Follow-up ${seq.steps.length + 1}`;
-    fresh.delayDays = 4; fresh.fixedDate = ''; fresh.threadReply = seq.steps.length > 0;
-    fresh.blocks = fresh.blocks.map((x) => ({ ...x, id: uid('b') }));
-    seq.steps.push(fresh);
-    save(seq, 'Email added');
+    openTemplatePicker({ title: 'Add an email from a template', useLabel: 'Add', onPick: (tpl) => {
+      const seq = clone(seqById(seqId));
+      const first = seq.steps.length === 0;
+      seq.steps.push(stepFromTemplate(tpl, { delayDays: first ? 0 : 4, fixedDate: '', threadReply: !first }));
+      save(seq, `“${tpl.name}” added as email ${seq.steps.length}. Drag it into place if needed.`);
+    } });
   } else if (b.dataset.act) {
     const card = b.closest('[data-step]');
     const seq = seqById(seqId);
@@ -163,6 +174,15 @@ async function onClick(e) {
         { label: 'Edit design', icon: 'pen', onClick: () => { location.hash = `#/editor/${seq.id}/${st.id}`; } },
         { label: 'Send test to myself', icon: 'mail', onClick: () => sendTest(seq, st) },
         { label: 'Export HTML', icon: 'code', onClick: () => openExport(seq, st) },
+        { label: 'Download for approval…', icon: 'download', onClick: () => downloadMenu(b, { seq, step: st, index: idx, name: st.name }) },
+        { label: 'Replace design with a template…', icon: 'grid', onClick: () => openTemplatePicker({ title: `Replace the design of “${st.name}”`, useLabel: 'Use this design', onPick: async (tpl) => {
+          if (!(await confirmBox(`Replace the content of <b>${esc(st.name)}</b> with <b>${esc(tpl.name)}</b>? Its name and timing stay the same; subject lines, blocks and WhatsApp/LinkedIn text are replaced.`, { okText: 'Replace' }))) return;
+          const s2 = clone(seq);
+          const fresh = stepFromTemplate(tpl);
+          s2.steps[idx] = { ...s2.steps[idx], subjects: fresh.subjects, subjectIndex: fresh.subjectIndex, abTest: fresh.abTest, preheader: fresh.preheader, blocks: fresh.blocks, whatsapp: fresh.whatsapp, linkedin: fresh.linkedin };
+          save(s2, 'Design replaced');
+        } }) },
+        { label: 'Save as template', icon: 'star', onClick: async () => { const n = await prompt1('Template name', st.name, { title: 'Save as template' }); if (!n) return; try { await saveAsTemplate(st, { name: n, description: `From ${seq.name}` }); ok('Saved to Templates → My templates'); } catch (err) { fail(err); } } },
         { label: 'Duplicate', icon: 'dup', onClick: () => { const s2 = clone(seq); const c = clone(st); c.id = uid('s'); c.name += ' (copy)'; c.blocks = c.blocks.map((x) => ({ ...x, id: uid('b') })); s2.steps.splice(idx + 1, 0, c); save(s2, 'Email duplicated'); } },
         { label: 'Move up', icon: 'up', onClick: () => { if (!idx) return; const s2 = clone(seq); [s2.steps[idx - 1], s2.steps[idx]] = [s2.steps[idx], s2.steps[idx - 1]]; save(s2); } },
         { label: 'Move down', icon: 'down', onClick: () => { if (idx >= seq.steps.length - 1) return; const s2 = clone(seq); [s2.steps[idx + 1], s2.steps[idx]] = [s2.steps[idx], s2.steps[idx + 1]]; save(s2); } },

@@ -1,5 +1,5 @@
 /* Settings: Gmail (Google Cloud OAuth), sending rules, event & tiers, deck, images, unsubscribe, backup. */
-import { D, R, $, $$, esc, icon, api, ok, fail, loadState, ago, fmtDate, confirmBox, copyText, upload, download, toast, clone, debounce } from '../core.js';
+import { D, R, $, $$, esc, icon, api, ok, fail, loadState, ago, fmtDate, confirmBox, copyText, upload, download, toast, clone, debounce, assetUrl } from '../core.js';
 
 let wrap;
 const TZ = ['Asia/Dubai', 'Asia/Riyadh', 'Asia/Qatar', 'Asia/Kolkata', 'Asia/Karachi', 'Asia/Singapore', 'Europe/London', 'Europe/Berlin', 'Europe/Paris', 'America/New_York', 'UTC'];
@@ -48,7 +48,7 @@ function draw() {
   const deck = s.deck || {};
   wrap.innerHTML = `<div class="page-head"><div><div class="eyebrow">Configuration</div><h1>Settings</h1></div></div>
   <div class="settings">
-    <nav class="set-nav">${[['gmail', 'Gmail connection'], ['sending', 'Sending rules'], ['event', 'Event & tiers'], ['deck', 'Sponsorship deck'], ['images', 'Images & hosting'], ['unsub', 'Unsubscribe & suppression'], ['backup', 'Backup & restore']].map(([k, l]) => `<a href="javascript:void 0" data-jump="${k}">${l}</a>`).join('')}</nav>
+    <nav class="set-nav">${[['gmail', 'Gmail connection'], ['sending', 'Sending rules'], ['event', 'Event & tiers'], ['brands', 'Hosts & sponsors'], ['deck', 'Sponsorship deck'], ['images', 'Images & hosting'], ['unsub', 'Unsubscribe & suppression'], ['backup', 'Backup & restore']].map(([k, l]) => `<a href="javascript:void 0" data-jump="${k}">${l}</a>`).join('')}</nav>
     <div>
       <section class="card set-sec" id="gmail"><div class="card-head"><h3>Gmail connection</h3><span class="right badge ${g.connected.length ? '' : 'outline'}" ${g.connected.length ? 'style="background:#22C55E22;color:#22C55E"' : ''}>${g.connected.length ? `${g.connected.length} connected` : 'not connected'}</span></div>
         <p class="small muted" style="margin-top:0">Emails go out from your own Gmail / Google Workspace address through the Gmail API, using your own Google Cloud project. Nothing passes through a bulk sender. Tokens stay on this computer in <span class="kbd">data/secrets.json</span>.</p>
@@ -92,7 +92,10 @@ function draw() {
           <label class="field"><span>Date label</span><input class="input" data-s="event.dateLabel" value="${esc(ev.dateLabel)}"></label>
           <label class="field"><span>Event date (for countdown and fixed-date emails)</span><input type="date" class="input" data-s="event.date" value="${esc(ev.date)}"></label>
           <label class="field"><span>Spots left ({{spots_left}})</span><input class="input" data-s="event.spotsLeft" value="${esc(ev.spotsLeft || '')}" placeholder="e.g. 40"></label>
-          <label class="field span2"><span>Ticket link ({{ticket_link}})</span><input class="input" data-s="event.ticketLink" value="${esc(ev.ticketLink)}"></label>
+          <label class="field span2"><span>Ticket link ({{ticket_link}}, used by “Buy Ticket”)</span><input class="input" data-s="event.ticketLink" value="${esc(ev.ticketLink)}"></label>
+          <label class="field"><span>Ticket discount code ({{promo_code}})</span><input class="input" data-s="event.promoCode" value="${esc(ev.promoCode || '')}" placeholder="e.g. DeepakEB"><span class="hint">Shown in a box under every Buy Ticket / Get Tickets button. Leave empty to hide it.</span></label>
+          <div class="field"></div>
+          <label class="field span2"><span>“Let’s talk” form link (optional)</span><input class="input" data-s="talkFormUrl" value="${esc(s.talkFormUrl || '')}" placeholder="Leave blank to use a pre-filled email"><span class="hint">Blank: “Let’s talk” opens an email to you with Name, Company, Role, Phone/WhatsApp, Best time and Topic for them to fill in. Their reply lands in your Gmail and Inbox, and the lead moves to Replied. To use a web form instead, paste a Google Form or Calendly link here (turn on email notifications in that tool so submissions reach you).</span></label>
           <label class="field span2"><span>Footer line 1</span><input class="input" data-s="event.footerLine1" value="${esc(ev.footerLine1 || '')}"></label>
           <label class="field span2"><span>Footer line 2</span><input class="input" data-s="event.footerLine2" value="${esc(ev.footerLine2 || '')}"></label>
         </div>
@@ -105,6 +108,15 @@ function draw() {
         <div class="sp16"></div><div class="label">Comparison table</div><div class="sp8"></div>
         <div class="table-wrap"><table class="t"><thead><tr><th>Row</th>${R.TIER_ORDER.map((k) => `<th style="color:${R.TIER_COLORS[k]}">${esc(s.tiers[k].name)}</th>`).join('')}</tr></thead><tbody>
           ${s.comparison.map((row, i) => `<tr style="cursor:default">${row.map((c, j) => `<td><input class="input sm" data-cmp="${i}|${j}" value="${esc(c)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      </section>
+
+      <section class="card set-sec" id="brands"><div class="card-head"><h3>Hosts & sponsors</h3></div>
+        <p class="small muted" style="margin-top:0">Host logos sit in the email header on the dark band, so use white or light logos (PNG with a transparent background). Sponsor logos sit on white tiles under “${esc(brands().sponsorsLabel || 'Sponsored by')}” in the footer. Changes apply to every email. Each email’s header and footer can show or hide them in the editor.</p>
+        ${brandList('hosts', 'Hosts (header and signature)', brands().hosts || [])}
+        <div class="sp16"></div>
+        <div class="form-grid"><label class="field"><span>Sponsor row title</span><input class="input" data-blabel value="${esc(brands().sponsorsLabel || 'Sponsored by')}"></label><div class="field"></div></div>
+        <div class="sp8"></div>
+        ${brandList('sponsors', 'Sponsors (footer)', brands().sponsors || [])}
       </section>
 
       <section class="card set-sec" id="deck"><div class="card-head"><h3>Sponsorship deck</h3></div>
@@ -146,6 +158,41 @@ function draw() {
   </div>`;
 }
 
+/* ------------------------------------------------------- hosts & sponsors */
+const brands = () => pendingSettings.brands || D().settings.brands || { hosts: [], sponsors: [] };
+
+function brandList(kind, title, list) {
+  return `<div class="label">${title}</div><div class="sp8"></div>
+  ${list.map((x, i) => `<div class="brand-row" data-kind="${kind}" data-i="${i}">
+    <div class="brand-logo ${kind === 'hosts' ? 'dark' : 'light'}">${x.logo ? `<img src="${esc(assetUrl(x.logo))}" alt="">` : '<span class="tiny faint">No logo</span>'}</div>
+    <input class="input sm grow" data-bname value="${esc(x.name || '')}" placeholder="Name (also the image alt text)">
+    <button class="btn xs" data-blogo>${icon('upload')} ${x.logo ? 'Replace logo' : 'Upload logo'}</button>
+    <button class="btn xs ghost icon" data-bmove="-1" title="Move left" ${i ? '' : 'disabled'}>${icon('up')}</button>
+    <button class="btn xs ghost icon" data-bmove="1" title="Move right" ${i < list.length - 1 ? '' : 'disabled'}>${icon('down')}</button>
+    <button class="btn xs ghost icon" data-bdel title="Remove">${icon('trash')}</button>
+  </div>`).join('') || '<div class="small muted">None yet.</div>'}
+  <div class="sp8"></div><button class="btn sm" data-badd="${kind}">${icon('plus')} Add ${kind === 'hosts' ? 'host' : 'sponsor'}</button>`;
+}
+
+/** Save the whole hosts & sponsors setting now (for adds, removals, reorders and logo uploads). */
+async function saveBrands(br) {
+  delete pendingSettings.brands;
+  await api('PUT', '/api/settings', { brands: br });
+  await loadState(); draw(); ok('Hosts & sponsors saved');
+}
+
+/** Read a logo, shrink it to at most 600px wide (keeping transparency) and return the file plus its width/height ratio. */
+async function readLogo(file) {
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('That image could not be read.')); im.src = URL.createObjectURL(file); });
+  const ratio = Math.round((img.width / img.height) * 1000) / 1000;
+  if (img.width <= 600) return { file, ratio };
+  const c = document.createElement('canvas');
+  c.width = 600; c.height = Math.round(600 / ratio);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  return { file: new File([blob], file.name.replace(/\.\w+$/, '') + '.png', { type: 'image/png' }), ratio };
+}
+
 /* ----------------------------------------------------------------- saving */
 const pendingSettings = {};
 const flush = debounce(async () => {
@@ -178,6 +225,13 @@ function onInput(e) {
     pendingSettings.comparison = cmp;
     flush();
   }
+  if (t.matches('[data-bname]')) {
+    const row = t.closest('.brand-row');
+    const br = clone(brands());
+    br[row.dataset.kind][Number(row.dataset.i)].name = t.value;
+    setSetting('brands', br);
+  }
+  if (t.matches('[data-blabel]')) setSetting('brands', { ...clone(brands()), sponsorsLabel: t.value });
   if (t.dataset.acct && t.dataset.k === 'dailyLimit') { const v = $(`[data-limv="${t.dataset.acct}"]`, wrap); if (v) v.textContent = t.value; }
 }
 
@@ -194,6 +248,35 @@ async function onClick(e) {
   if (!b) return;
   try {
     if (b.dataset.jump) { document.getElementById(b.dataset.jump).scrollIntoView({ behavior: 'smooth' }); return; }
+    const brow = b.closest('.brand-row');
+    if (brow || b.dataset.badd) {
+      const br = clone(brands());
+      if (b.dataset.badd) {
+        br[b.dataset.badd] = [...(br[b.dataset.badd] || []), { name: b.dataset.badd === 'hosts' ? 'New host' : 'New sponsor', logo: '', ratio: 3 }];
+        await saveBrands(br); return;
+      }
+      const list = br[brow.dataset.kind];
+      const i = Number(brow.dataset.i);
+      if (b.dataset.bmove) {
+        const j = i + Number(b.dataset.bmove);
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]];
+        await saveBrands(br);
+      } else if (b.matches('[data-bdel]')) {
+        if (!(await confirmBox(`Remove <b>${esc(list[i].name || 'this logo')}</b> from every email?`, { okText: 'Remove', danger: true }))) return;
+        list.splice(i, 1);
+        await saveBrands(br);
+      } else if (b.matches('[data-blogo]')) {
+        const file = await new Promise((res) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.onchange = () => res(inp.files[0]); inp.click(); });
+        if (!file) return;
+        b.disabled = true; b.textContent = 'Uploading…';
+        const lg = await readLogo(file);
+        const r = await upload(lg.file, 'logo');
+        list[i] = { ...list[i], logo: r.ref, ratio: lg.ratio };
+        await saveBrands(br);
+      }
+      return;
+    }
     if (b.dataset.copy) copyText(b.dataset.copy);
     else if (b.matches('[data-savecred]')) {
       const clientId = $('[data-g="clientId"]', wrap).value.trim();

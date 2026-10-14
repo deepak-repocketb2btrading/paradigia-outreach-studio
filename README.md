@@ -65,15 +65,18 @@ Out-of-office replies are noted but don't pause the sequence (you can change tha
 
 ## 4. Templates and the editor
 
-Five ready-made sequences with 3 subject lines per email, WhatsApp and LinkedIn versions:
+Ready-made sequences with 3 subject lines per email, WhatsApp and LinkedIn versions:
 
 | Sequence | Emails |
 |---|---|
-| Bronze Sponsor Push (warm clients) | Day 0 intro · Day 4 benefits · Day 9 last call · Day 14 meet me on the yacht |
-| Premium and Gold Pitch (decision makers) | Intro · ROI and visibility · Tier comparison |
-| Ticket Sales | Announcement · Spots left · Final week (Dec 2) · Day before (Dec 8) |
-| Sponsor Onboarding | Thank you · Logo and asset request · Event-day details (Dec 7) |
+| **Sponsorship** (every tier, one sequence) | Day 0 intro · Day 4 what partners get · Day 9 compare the packages · Day 14 last call · Day 19 meet me on the yacht |
+| **Tickets** | Announcement · Spots left · Final week (Dec 2) · Day before (Dec 8) |
+| Sponsor Onboarding (after someone signs) | Thank you · Logo and asset request · Event-day details (Dec 7) |
 | Post-event | Thank you (Dec 10) · Follow-up |
+
+The Sponsorship sequence adapts to each lead’s **tier interest** (Bronze, Silver, Gold or Premium): `{{tier}}`, `{{price}}`,
+the tier card and the highlighted column of the comparison table follow it. Leads without a tier get Bronze, the entry point.
+Product categories from your CSV are kept separately under **Interests**.
 
 **Sequences → Edit design** opens the editor:
 - Click any text in the email to edit it. A toolbar adds bold, links, bullets and merge fields
@@ -81,10 +84,41 @@ Five ready-made sequences with 3 subject lines per email, WhatsApp and LinkedIn 
 - Block library: header, hero, text, tier card, comparison table, benefits list, "why partner" box,
   CTA buttons, image, divider, Meet the Team, signature, footer. Save any block as reusable.
 - Desktop / mobile / dark-mode preview, preview with a real lead's data, **Send test**, **Export HTML**.
+- **HTML tab**: see and edit the email’s full HTML with a live preview. Once you edit it, the email is sent exactly as your HTML
+  (merge fields still work; **Back to design** returns to the blocks). **Edit as HTML** on a single block turns just that part into code.
+- **Download** (editor, an email's ⋯ menu, template cards) and **Approval sheet** (sequence page): an *approval sheet* with the subject lines,
+  preview text, timing, deck setting and the email itself, plus a sign-off box. **Open in browser** opens it as a page in a new tab on this PC
+  (save, print or share it from there); **Download file** saves it as a self-contained .html with images included. The plain email HTML is there too.
 - Per email: A/B subject testing, preheader, timing (days after previous, or a fixed date),
   same-thread follow-ups, and the **sponsorship deck toggle** (attach PDF / link / off, remembered per sequence).
 
 Placeholders in square brackets (e.g. `[BOARDING POINT]`, `[DRESS CODE]`, `[ASSET DEADLINE]`) are flagged before sending. Fill them in first.
+
+### Templates
+
+**Templates** (left menu) holds 24 ready-made email designs: 8 layouts (personal note, branded blank, big announcement,
+event invitation, why sponsor, package comparison, meet the team, photo story) plus every email from the sequences, and the original Bronze and Premium/Gold emails under **Sponsorship extras**.
+
+- **Build a sequence**: click templates to add them, drag or use the arrows to put them in order, set the days between them, then **Create sequence**.
+- **Add to sequence**: add any template as the last email of an existing sequence (or **Add email from template** on a sequence page), then drag it into place.
+- **Replace design with a template…** (an email's ⋯ menu) swaps the content but keeps its name and timing.
+- **Save as template** (editor toolbar or the ⋯ menu) stores your own designs under **My templates**. **Customise** copies a built-in template so you can edit it.
+- **New from HTML**: paste an HTML email; it becomes a template inside the branded frame with your unsubscribe footer. The **Custom HTML** block does the same inside any email.
+
+Templates are copied when used, so editing an email in a sequence never changes the template (and vice versa).
+
+**Marketing review** (Sequences, or a sequence page → **Marketing review**): pick the sequences and download one
+**review page (.html)** to send by email, Slack or WhatsApp. It opens in any browser on a computer, with the images
+inside. Reviewers read each email as a lead sees it (desktop or phone width), switch to **Edit text** to change the
+wording on the email itself (subject lines, preview text and WhatsApp/LinkedIn versions too), approve each email or
+mark it "Needs changes" with a comment, then click **Save review** and send back the small .json file. Their work is
+kept in their browser if they close the page, and **Open saved** continues a saved review. Back in the app,
+**Import review…** lists every change (old text struck through, new text below) so you can tick which to keep;
+approvals show on each email in the sequence. **Download content (.json)** gives the same text as a plain file for
+anyone who prefers to edit it directly; an edited content file can be imported the same way. Only text changes are
+accepted on import (no links, code or layout), and no leads are included, only the sample lead.
+
+**Hosts & sponsors**: the header shows the host logos (mobi hub | events, Paradigia), and the footer shows **Sponsored by** with a white tile for each sponsor (Sago, Sunstrike, Repocket). Replace, add, remove or reorder logos in **Settings → Hosts & sponsors**; every email updates. In the editor, the Header block can also show the sponsors, and the Footer block can hide them.
 
 ## 5. Your data, backups
 
