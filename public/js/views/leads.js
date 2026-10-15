@@ -279,16 +279,34 @@ function guess(header) {
   if (/^(lastname|last|surname|familyname|lname)$/.test(h)) return 'lastName';
   if (/^(name|fullname|contactname|contact)$/.test(h)) return 'fullName';
   if (h.includes('email') || h === 'mail') return 'email';
-  if (/(company|organisation|organization|account|business|brand)/.test(h)) return 'company';
+  // Company descriptions, addresses, websites and switchboard numbers are not the company name.
+  if (/(description|about|profile|summary|address|website|url|vat|eori|size|employees|revenue|country|city)/.test(h)) return '';
+  if (/(company|organisation|organization|account|business|brand)/.test(h)) return /(phone|tel|mobile)/.test(h) ? '' : 'company';
   if (/(title|position|role|designation|jobtitle)/.test(h)) return 'title';
   if (/(phone|mobile|whatsapp|tel|cell)/.test(h)) return 'phone';
   if (h.includes('linkedin')) return 'linkedin';
   if (/(tier|package|sponsor)/.test(h)) return 'tierInterest';
   if (/(interest|product|category|sector|industry)/.test(h)) return 'interests';
-  if (/(status|stage|pipeline)/.test(h)) return 'status';
+  if (/^(status|leadstatus|pipelinestatus|stage|pipeline|pipelinestage|dealstage)$/.test(h)) return 'status';
   if (/(note|comment|remark)/.test(h)) return 'notes';
   if (/(list|tag|segment|group)/.test(h)) return 'tags';
   return '';
+}
+
+/** Guess every column, then keep one column per field (notes and tags can take several):
+    the column whose name is closest to the field wins, e.g. "company_name" over "company". */
+function guessAll(header) {
+  const map = header.map(guess);
+  const PREFER = { company: /^(companyname|company|organisationname|organizationname|organisation|organization|accountname)$/, phone: /^(phone|mobile|whatsapp|contacttelephone|contactphone|mobilephone|phonenumber)$/, title: /^(title|jobtitle|position|contactposition|role)$/ };
+  const seen = {};
+  map.forEach((f, i) => { if (f && f !== 'notes' && f !== 'tags') (seen[f] = seen[f] || []).push(i); });
+  for (const [f, cols] of Object.entries(seen)) {
+    if (cols.length < 2) continue;
+    const key = (i) => header[i].toLowerCase().replace(/[^a-z]/g, '');
+    const best = cols.find((i) => PREFER[f] && PREFER[f].test(key(i))) ?? cols[0];
+    cols.forEach((i) => { if (i !== best) map[i] = ''; });
+  }
+  return map;
 }
 
 function openImport() {
@@ -311,7 +329,7 @@ function openImport() {
     if (parsed.length < 2) { fail('That file has no data rows.'); return; }
     header = parsed[0].map((h) => h.trim());
     rows = parsed.slice(1);
-    map = header.map(guess);
+    map = guessAll(header);
     if (!map.includes('email')) { const i = rows[0].findIndex((c) => /@/.test(c)); if (i >= 0) map[i] = 'email'; }
     step2();
   };

@@ -645,7 +645,7 @@
       : '';
     return sec(b, r, { bg: C.night, pad: spons ? '30px 34px 34px 34px' : '28px 40px 34px 40px', cls: 'px', align: 'center' }, spons +
       `<p style="margin:0 0 8px 0;font-family:${FONT};font-size:10px;line-height:14px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#A4A2B6;text-align:center;">${esc(ev.name || 'An Evening on the Water')}</p>` +
-      `<p style="margin:0 0 14px 0;font-family:${FONT};font-size:11px;line-height:18px;color:#8C8A9C;text-align:center;">${esc(ev.footerLine1 || 'December 9, 2026 · Gathering from 7:00 PM · Event 9:00 PM – 1:00 AM')}<br>${esc(ev.footerLine2 || 'Aboard a private yacht, Dubai Marina · 400-guest capacity')}</p>` +
+      `<p style="margin:0 0 14px 0;font-family:${FONT};font-size:11px;line-height:18px;color:#8C8A9C;text-align:center;">${esc(ev.footerLine1 || 'December 9, 2026 · Begins 7:00 PM with networking · Until 1:00 AM')}<br>${esc(ev.footerLine2 || 'Aboard a private yacht, Dubai Marina · 400-guest capacity')}</p>` +
       `<p style="margin:0;font-family:${FONT};font-size:10.5px;line-height:17px;color:#6B6A78;text-align:center;"><span${r.E('note')}>${r.T(b.note || '')}</span> <a href="${unsub}" target="_blank" style="color:#A4A2B6;text-decoration:underline;">${esc(u.text || 'Unsubscribe')}</a></p>`);
   };
 
