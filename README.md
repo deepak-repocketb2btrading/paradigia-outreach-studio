@@ -81,6 +81,9 @@ Product categories from your CSV are kept separately under **Interests**.
 **Sequences → Edit design** opens the editor:
 - Click any text in the email to edit it. A toolbar adds bold, links, bullets and merge fields
   (`{{first_name}}`, `{{company}}`, `{{sender_name}}`, `{{tier}}`, `{{price}}`, `{{ticket_link}}`, …).
+  `{{company}}` reads naturally: legal endings (Ltd, GmbH, LLC, B.V., Sp. z o.o., …), event labels like
+  "Sponsor EBM" and "formerly known as" notes are dropped, so "Ecoele GmbH" becomes "Ecoele". The lead keeps
+  the full name, and `{{company_full}}` inserts it where you need the legal name.
 - Block library: header, hero, text, tier card, comparison table, benefits list, "why partner" box,
   CTA buttons, image, divider, Meet the Team, signature, footer. Save any block as reusable.
 - Desktop / mobile / dark-mode preview, preview with a real lead's data, **Send test**, **Export HTML**.

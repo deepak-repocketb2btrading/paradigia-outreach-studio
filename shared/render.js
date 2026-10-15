@@ -39,6 +39,7 @@
     { key: 'first_name', label: 'First name', fallback: 'there' },
     { key: 'last_name', label: 'Last name', fallback: '' },
     { key: 'company', label: 'Company', fallback: 'your company' },
+    { key: 'company_full', label: 'Company (full legal name)', fallback: 'your company' },
     { key: 'sender_name', label: 'Sender name' },
     { key: 'tier', label: 'Tier' },
     { key: 'price', label: 'Tier price' },
@@ -83,6 +84,35 @@
     };
   }
 
+  /* Company names as they read in an email: "Ecoele GmbH Sponsor EBM" -> "Ecoele", "1st Technologies Ltd." -> "1st Technologies".
+     Drops legal endings, the "Sponsor EBM" label from event lists, "formerly known as" notes and a trailing (UK)-style
+     qualifier. The full name stays on the lead and is available as {{company_full}}. */
+  // String.raw keeps every backslash for the RegExp. Longer endings come first ("Pte. Ltd." before "Ltd.").
+  const LEGAL = [
+    String.raw`gmbh\s*&\s*co\.?\s*kg|ag\s*&\s*co\.?\s*ohg|ug\s*\(haftungsbeschr[aä]nkt\)`,
+    String.raw`sp\.?\s?z\.?\s?o\.?\s?o\.?|sp\.?\s?zoo|sp\.?\s?k\.?`,
+    String.raw`co\.?,?\s?ltd\.?|co\.?,?\s?limited|pty\.?\s?ltd\.?|pte\.?\s?ltd\.?|pvt\.?\s?ltd\.?|private\s+limited|sdn\.?\s?bhd\.?`,
+    String.raw`tr\.?\s?co\.?\s?l\.?l\.?c\.?|tr\.?\s?l\.?l\.?c\.?|l\.?l\.?c\.?(?:-fz)?|fz-?llc|fzco|fze|dmcc`,
+    String.raw`unipessoal,?\s+lda\.?|unip\.?,?\s+lda\.?|unipessoal|unip\.?|ltda\.?|lda\.?`,
+    String.raw`gmbh|mbh|ohg|kg|ug|ag|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|plc|llp`,
+    String.raw`b\.?\s?v\.?|n\.?\s?v\.?|s\.?\s?a\.?\s?s\.?|sarl|s\.?\s?a\.?|s\.?\s?l\.?(?:\s?u\.?)?|srls?|s\.?\s?r\.?\s?l\.?|s\.?\s?p\.?\s?a\.?`,
+    String.raw`oyj?|ab|a/s|aps|asa?|s\.?\s?r\.?\s?o\.?|a\.?\s?s\.?|d\.?\s?o\.?\s?o\.?|kft\.?|zrt\.?|uab|bhd|co\.?|trd|tr|sp`,
+  ].join('|');
+  const LEGAL_END = new RegExp(`[\\s,]+(?:${LEGAL})\\s*$`, 'i');
+  function shortCompany(name) {
+    const full = String(name || '').replace(/\s+/g, ' ').trim();
+    let s = full
+      .replace(/\s+(?:main\s+)?sponsor\s+ebm$/i, '')
+      .replace(/\s*[-–,(]*\s*\b(?:f\.?k\.?a\.?|formerly(?:\s+known\s+as)?|a\.?k\.?a\.?)\b.*$/i, '');
+    for (let i = 0; i < 4; i++) {
+      const t = s.replace(LEGAL_END, '').replace(/[\s,\-–]+$/, '');
+      if (t === s) break;
+      s = t;
+    }
+    s = s.replace(/\s*\([^()]{1,40}\)$/, '').replace(/[\s,\-–]+$/, '');
+    return s.length >= 2 ? s : full;
+  }
+
   function mergeData(lead, ctx) {
     const s = ctx.settings || {};
     const ev = s.event || {};
@@ -94,7 +124,8 @@
     return {
       first_name: first,
       last_name: l.lastName || '',
-      company: l.company || '',
+      company: shortCompany(l.company),
+      company_full: String(l.company || '').trim(),
       tier: (tiers[tk] && tiers[tk].name) || 'Bronze',
       price: money((tiers[tk] && tiers[tk].price) || 3000),
       ticket_link: ev.ticketLink || '',
@@ -881,6 +912,6 @@ ${inner}
   return {
     C, TIER_COLORS, TIER_ORDER, STATUSES, MERGE_FIELDS, BLOCKS, FONT,
     esc, merge, mergeData, htmlToText, wordCount, bodyWords, renderEmail, renderText, preflight, shortText, tierKey, money,
-    htmlSource, renderBlock, untoken, leadTier,
+    htmlSource, renderBlock, untoken, leadTier, shortCompany,
   };
 });
